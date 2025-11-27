@@ -1,0 +1,9 @@
+{
+  "name": "Alper AI",
+  "description": "Your all-in-one AI creative assistant for text, image, video, and voice.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera",
+    "geolocation"
+  ]
+}
