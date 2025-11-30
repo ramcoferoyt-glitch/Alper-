@@ -211,7 +211,7 @@ export const EditorInterface: React.FC = () => {
             <div className="w-full lg:w-[450px] bg-gray-900 border-r border-gray-800 flex flex-col z-10 flex-shrink-0">
                 <div className="p-6 border-b border-gray-800">
                     <h2 className="text-2xl font-bold text-yellow-500 mb-1 flex items-center gap-2">
-                        <span className="material-symbols-outlined">edit_document</span>
+                        <span className="material-symbols-outlined" aria-hidden="true">edit_document</span>
                         Alper Editör
                     </h2>
                     <p className="text-xs text-gray-400 font-medium">Alper X5 Destekli Profesyonel Kitap Mimarı.</p>
@@ -222,15 +222,19 @@ export const EditorInterface: React.FC = () => {
                     {/* Input Method Tabs */}
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">İçerik Kaynağı</label>
-                        <div className="flex bg-gray-800 p-1 rounded-xl">
+                        <div className="flex bg-gray-800 p-1 rounded-xl" role="tablist">
                             <button 
                                 onClick={() => setActiveTab('text')}
+                                role="tab"
+                                aria-selected={activeTab === 'text'}
                                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'text' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                             >
                                 Metin Yapıştır
                             </button>
                             <button 
                                 onClick={() => setActiveTab('files')}
+                                role="tab"
+                                aria-selected={activeTab === 'files'}
                                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'files' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                             >
                                 Dosya Yükle
@@ -247,6 +251,7 @@ export const EditorInterface: React.FC = () => {
                                     onChange={(e) => setPastedText(e.target.value)}
                                     placeholder="Kitabınızın ham metnini, notlarınızı veya bölüm taslaklarını buraya yapıştırın. Sınırsız uzunlukta olabilir..."
                                     className="w-full h-64 bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm text-white focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none resize-none placeholder-gray-500 custom-scrollbar"
+                                    aria-label="Kitap Metni Girişi"
                                 ></textarea>
                                 <div className="absolute bottom-4 right-4 text-xs text-gray-500 bg-gray-900/80 px-2 py-1 rounded-md border border-gray-700">
                                     {wordCount} kelime / {characterCount} karakter
@@ -261,25 +266,29 @@ export const EditorInterface: React.FC = () => {
                         <div className="animate-fadeIn">
                             <div 
                                 onClick={() => fileInputRef.current?.click()}
+                                role="button"
+                                tabIndex={0}
+                                aria-label="Dosya Seç"
+                                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
                                 className="border-2 border-dashed border-gray-700 hover:border-yellow-500/50 hover:bg-yellow-500/10 rounded-xl p-8 text-center cursor-pointer transition-all group"
                             >
-                                <span className="material-symbols-outlined text-4xl text-gray-600 group-hover:text-yellow-500 transition-colors mb-3">upload_file</span>
+                                <span className="material-symbols-outlined text-4xl text-gray-600 group-hover:text-yellow-500 transition-colors mb-3" aria-hidden="true">upload_file</span>
                                 <p className="text-sm text-gray-300 font-medium">Dosyaları Seçin</p>
                                 <p className="text-xs text-gray-500 mt-1">PDF, TXT, MD desteklenir</p>
-                                <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.md" className="hidden" onChange={handleFileSelect} />
+                                <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.md" className="hidden" onChange={handleFileSelect} aria-hidden="true" />
                             </div>
                             {files.length > 0 && (
                                 <div className="mt-4 space-y-2">
                                     {files.map((f, i) => (
                                         <div key={i} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg text-xs border border-gray-700">
                                             <div className="flex items-center gap-2 overflow-hidden">
-                                                <span className="material-symbols-outlined text-gray-500 text-sm">
+                                                <span className="material-symbols-outlined text-gray-500 text-sm" aria-hidden="true">
                                                     {f.mimeType === 'application/pdf' ? 'picture_as_pdf' : 'description'}
                                                 </span>
                                                 <span className="truncate max-w-[200px] text-gray-300">{f.name}</span>
                                             </div>
-                                            <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} className="text-gray-500 hover:text-red-400 p-1">
-                                                <span className="material-symbols-outlined text-sm">close</span>
+                                            <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} className="text-gray-500 hover:text-red-400 p-1" aria-label="Dosyayı kaldır">
+                                                <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
                                             </button>
                                         </div>
                                     ))}
@@ -295,6 +304,7 @@ export const EditorInterface: React.FC = () => {
                             value={selectedStyle}
                             onChange={(e) => setSelectedStyle(e.target.value)}
                             className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-xl p-3 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                            aria-label="Stil Seçimi"
                         >
                             {STYLES.map(s => (
                                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -310,6 +320,7 @@ export const EditorInterface: React.FC = () => {
                             onChange={(e) => setInstructions(e.target.value)}
                             placeholder="Örn: 'Bölümler arası geçişlerde gerilimi yüksek tut. Kahramanın iç dünyasına odaklan. Stoacı felsefeyi ince bir şekilde işle.'"
                             className="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none resize-none"
+                            aria-label="Talimatlar"
                         ></textarea>
                     </div>
 
@@ -317,13 +328,14 @@ export const EditorInterface: React.FC = () => {
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Hedef Uzunluk (Sayfa)</label>
                         <div className="flex items-center gap-4 bg-gray-800 p-3 rounded-xl border border-gray-700">
-                            <span className="material-symbols-outlined text-gray-400">auto_stories</span>
+                            <span className="material-symbols-outlined text-gray-400" aria-hidden="true">auto_stories</span>
                             <input 
                                 type="number" 
                                 value={pageCount} 
                                 onChange={(e) => setPageCount(parseInt(e.target.value))}
                                 className="bg-transparent w-full outline-none font-bold text-white placeholder-gray-600"
                                 min={10} max={1000}
+                                aria-label="Sayfa Sayısı"
                             />
                         </div>
                     </div>
@@ -335,8 +347,9 @@ export const EditorInterface: React.FC = () => {
                         onClick={handleGenerate}
                         disabled={isGenerating || isContinuing || (files.length === 0 && !pastedText.trim() && !instructions)}
                         className="w-full py-4 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95"
+                        aria-label={isGenerating ? "Kitap Yazılıyor..." : "Kitabı Yazmaya Başla"}
                     >
-                        {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="material-symbols-outlined">history_edu</span>}
+                        {isGenerating ? <span className="material-symbols-outlined animate-spin" aria-hidden="true">progress_activity</span> : <span className="material-symbols-outlined" aria-hidden="true">history_edu</span>}
                         {isGenerating ? 'Yazılıyor...' : 'Kitabı Yazmaya Başla'}
                     </button>
                 </div>
@@ -344,10 +357,10 @@ export const EditorInterface: React.FC = () => {
 
             {/* Main Preview Area */}
             <div className="flex-grow bg-gray-200 text-black overflow-y-auto p-4 lg:p-12 flex justify-center custom-scrollbar relative">
-                <div ref={previewRef} className="max-w-4xl w-full bg-white shadow-2xl min-h-[1000px] p-12 lg:p-24 relative mb-20">
+                <div ref={previewRef} className="max-w-4xl w-full bg-white shadow-2xl min-h-[1000px] p-12 lg:p-24 relative mb-20" aria-live="polite">
                     {!manuscript && !isGenerating && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 opacity-60">
-                            <span className="material-symbols-outlined text-8xl mb-4 text-gray-300">import_contacts</span>
+                            <span className="material-symbols-outlined text-8xl mb-4 text-gray-300" aria-hidden="true">import_contacts</span>
                             <p className="text-xl font-serif font-medium text-gray-500">Taslak burada oluşturulacak.</p>
                             <p className="text-sm text-gray-400 mt-2">Sol panelden içeriğinizi ekleyin ve 'Başla'ya basın.</p>
                         </div>
@@ -375,7 +388,7 @@ export const EditorInterface: React.FC = () => {
                             {/* Continue Loading Indicator */}
                             {isContinuing && (
                                 <div className="mt-8 flex items-center justify-center gap-3 text-gray-500 italic">
-                                    <span className="material-symbols-outlined animate-spin">refresh</span>
+                                    <span className="material-symbols-outlined animate-spin" aria-hidden="true">refresh</span>
                                     Yeni bölüm yazılıyor...
                                 </div>
                             )}
@@ -397,17 +410,17 @@ export const EditorInterface: React.FC = () => {
                             {isMenuOpen && (
                                 <div className="absolute bottom-full right-0 mb-3 w-48 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
                                     <button onClick={handleCopy} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg">content_copy</span> Kopyala
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">content_copy</span> Kopyala
                                     </button>
                                     <button onClick={handleDownloadWord} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-blue-400 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg">description</span> Word İndir
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">description</span> Word İndir
                                     </button>
                                     <button onClick={handleDownloadPDF} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-red-400 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg">picture_as_pdf</span> PDF İndir
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">picture_as_pdf</span> PDF İndir
                                     </button>
                                     <div className="h-px bg-gray-800 mx-2"></div>
                                     <button onClick={handleClear} className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-gray-800 hover:text-red-300 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg">delete</span> Taslağı Temizle
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">delete</span> Taslağı Temizle
                                     </button>
                                 </div>
                             )}
@@ -415,8 +428,9 @@ export const EditorInterface: React.FC = () => {
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                                 className="bg-gray-900 text-white p-4 rounded-full font-bold shadow-2xl hover:bg-black transition-all border border-gray-700"
                                 title="İşlemler"
+                                aria-label="Seçenekler"
                             >
-                                <span className="material-symbols-outlined text-xl">{isMenuOpen ? 'close' : 'more_vert'}</span>
+                                <span className="material-symbols-outlined text-xl" aria-hidden="true">{isMenuOpen ? 'close' : 'more_vert'}</span>
                             </button>
                         </div>
 
@@ -426,14 +440,15 @@ export const EditorInterface: React.FC = () => {
                                 onClick={handleContinue}
                                 disabled={isContinuing || isGenerating}
                                 className="bg-yellow-600 text-white px-6 py-4 rounded-full font-bold shadow-2xl hover:bg-yellow-500 hover:scale-105 transition-all flex items-center gap-2 border border-yellow-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Yazmaya Devam Et"
                             >
-                                <span className="material-symbols-outlined">auto_mode</span>
+                                <span className="material-symbols-outlined" aria-hidden="true">auto_mode</span>
                                 Kaldığın Yerden Devam Et
                             </button>
                         )}
                         {isComplete && (
                             <div className="bg-green-600 text-white px-6 py-4 rounded-full font-bold shadow-2xl flex items-center gap-2 cursor-default">
-                                <span className="material-symbols-outlined">check_circle</span>
+                                <span className="material-symbols-outlined" aria-hidden="true">check_circle</span>
                                 Tamamlandı
                             </div>
                         )}

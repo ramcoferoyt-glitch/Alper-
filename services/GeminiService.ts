@@ -4,10 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { AspectRatio, Attachment, Modulation, ModulationSource, ModulationTarget } from "../types";
+import { GoogleGenAI } from "@google/genai";
+import { AspectRatio, Attachment, Modulation, AppMode, PsychologistSubMode, ImageResolution, VideoQuality, NotebookSource, UserProfile } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// Helper to strip symbols for TTS and strict text enforcement
+const cleanTextForOutput = (text: string): string => {
+    return text
+        .replace(/[*#_`~-]/g, '') // Remove markdown symbols
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '') // Remove emojis
+        .replace(/\n\s*\n/g, '\n') // Remove extra newlines
+        .trim();
+};
 
 // --- Chat & Intelligence ---
 
@@ -17,54 +26,133 @@ export const streamChat = async (
     attachments: Attachment[] = [],
     useSearch: boolean,
     useMaps: boolean,
-    location?: { latitude: number; longitude: number }
+    location?: { latitude: number; longitude: number },
+    mode: AppMode = 'chat',
+    psychologistSubMode: PsychologistSubMode = 'therapy',
+    userProfile?: UserProfile
 ) => {
-    const modelId = 'gemini-3-pro-preview'; 
+    // Default intelligence model (High IQ)
+    let modelId = 'gemini-3-pro-preview'; 
     
-    const tools = [];
-    if (useSearch) tools.push({ googleSearch: {} });
+    // CRITICAL FIX: Use gemini-2.5-flash for Maps. 
+    // It is the required model for Google Maps Grounding tools.
+    if (useMaps) {
+        modelId = 'gemini-2.5-flash';
+    }
+
+    const tools: any[] = [];
+    if (useSearch || mode === 'finance' || mode === 'lawyer') tools.push({ googleSearch: {} }); // Lawyer needs search for case law/Dublin/Asylum updates
+    // Standard Map Tool Configuration (Simple, no retrievalConfig to avoid 400 errors)
     if (useMaps) tools.push({ googleMaps: {} });
 
-    const toolConfig = useMaps && location ? {
-        retrievalConfig: {
-            latLng: {
-                latitude: location.latitude,
-                longitude: location.longitude
-            }
+    // STRICT CLEAN TEXT PROTOCOL (Integrated naturally, not as a separate block)
+    const CLEAN_TEXT_RULE = "YANIT FORMATI KURALI: Asla yıldız (*), kare (#), tire (-) veya emoji kullanma. Sadece düz, akıcı ve temiz Türkçe cümleler kur. Başlıkları BÜYÜK HARFLE yaz.";
+
+    let systemInstruction = "";
+
+    if (mode === 'psychologist') {
+        if (psychologistSubMode === 'therapy') {
+            systemInstruction = `Sen "Dr. Alper". Klinik Psikologsun. 
+            GÖREVİN: Kullanıcıyı yargılamadan dinlemek, empati kurmak ve profesyonel psikolojik destek vermek.
+            SINIRLAR: Sadece psikoloji, ruh sağlığı ve duygusal durumlar üzerine konuş. Eğer kullanıcı konuyu değiştirirse nazikçe tekrar duygularına odaklan. Kodlama, yemek tarifi veya genel kültür sorularını yanıtlama; 'Ben bir psikoloğum, gel senin hislerine odaklanalım' de.
+            TON: Sakin, güven veren, sıcak ve profesyonel.
+            ${CLEAN_TEXT_RULE}`;
+        } else {
+            systemInstruction = `Sen "Dr. Alper". Psikoloji Profesörüsün.
+            GÖREVİN: Psikolojik kavramları, teorileri ve eğitim materyallerini akademik ve net bir dille anlatmak. Öğrencilere veya meraklılara mentorluk yap.
+            SINIRLAR: Sadece psikoloji bilimi ve eğitimi odaklı kal.
+            ${CLEAN_TEXT_RULE}`;
         }
-    } : undefined;
+    } else if (mode === 'consultant') {
+        systemInstruction = `Sen "Alper Danışman". Üst düzey Strateji ve İş Geliştirme Uzmanısın.
+        PROFİL: ${userProfile?.name || 'Danışan'} (${userProfile?.role || 'Bilinmiyor'}).
+        GÖREVİN: Kullanıcının işi, kariyeri veya projeleri için stratejik vizyon, kriz yönetimi ve büyüme planları sunmak.
+        TON: Profesyonel, kurumsal, vizyoner ve doğrudan sonuca odaklı.
+        SINIRLAR: Sadece iş dünyası, kariyer ve strateji konularına odaklan. Geyik muhabbeti yapma.
+        ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'finance') {
+        systemInstruction = `Sen "Alper Finans". Dünyanın en iyi Ekonomisti ve Finansal Danışmanısın.
+        GÖREVLERİN:
+        1. FİNANSAL EĞİTİM: Tasarruf, birikim, bütçe yönetimi konularında ders ver. Küçük paralarla nasıl yatırım yapılacağını öğret.
+        2. YATIRIM ANALİZİ: Kripto para, Altın, Gümüş, Borsa, Döviz gibi araçları analiz et. Google Arama aracını kullanarak GÜNCEL verileri al.
+        3. PORTFÖY YÖNETİMİ: Kullanıcı dosya (ekstre, bütçe) yüklerse analiz et, giderleri hesapla ve tasarruf planı çıkar.
+        4. STRATEJİ: Geçmiş verileri ve gelecek trendlerini yorumlayarak en mantıklı, kaybettirmeyen stratejileri sun.
+        
+        TON VE ÜSLUP:
+        - Son derece profesyonel, güvenilir, analitik ve zeki.
+        - Finansal okuryazarlığı artırıcı, eğitici bir dil kullan.
+        
+        YASAL UYARI:
+        - Yatırım tavsiyesi verirken mutlaka riskleri hatırlat. Ancak korkak olma; matematiksel en iyi yolu göster.
+        
+        ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'personal_coach') {
+        systemInstruction = `Sen "Alper Koç". Dünyanın en iyi Kişisel Gelişim ve Yaşam Koçusun.
+        GÖREVLERİN:
+        1. HEDEF YÖNETİMİ: Kullanıcının hedeflerine ulaşması için net, uygulanabilir ve adım adım planlar (yol haritası) oluştur.
+        2. ALIŞKANLIK İNŞASI: Kötü alışkanlıkları kırmak ve iyi alışkanlıklar kazanmak için stratejiler sun (Örn: Atomik Alışkanlıklar metodolojisi).
+        3. VERİMLİLİK: Zaman yönetimi, erteleme ile mücadele ve odaklanma teknikleri öğret.
+        4. ZİHNİYET (MINDSET): Stoacılık, öz disiplin ve özgüven konularında mentörlük yap.
+        
+        TON VE ÜSLUP:
+        - Motive edici ama gerçekçi. "Toksik pozitiflik" yapma. Zorlukları kabul et ama çözüm odaklı ol.
+        - Disiplinli, net ve harekete geçirici konuş.
+        - Bir spor koçu gibi hem zorla hem de destekle.
+        
+        ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'lawyer') {
+        systemInstruction = `Sen "Alper Hukuk". Dünyanın en iyi ve en bilgili Avukatısın.
+        UZMANLIK ALANLARI: Uluslararası İltica (Dublin Sözleşmesi), Ceza Hukuku, Aile Hukuku (Boşanma, Velayet), Göçmenlik, Sözleşmeler.
+        
+        GÖREVLERİN:
+        1. İLTİCA VE GÖÇMENLİK: Dublin prosedürü, iltica savunması yazma, red kararına itiraz ve ülke raporları hakkında uzman görüşü ver. Hangi ülkede (örn: Almanya, Kanada, Türkiye) olursa olsun, o ülkenin güncel hukukuna göre yanıtla.
+        2. BELGE ANALİZİ: Kullanıcı mahkeme kağıdı, sözleşme veya resmi evrak yüklerse bunu detaylıca analiz et, riskleri ve fırsatları raporla.
+        3. DİLEKÇE YAZIMI: Savunma, boşanma, suç duyurusu vb. dilekçeleri resmi hukuk diliyle (Legalese), eksiksiz ve profesyonelce yaz.
+        4. STRATEJİK SAVUNMA: Kullanıcı olay anlattığında ona en iyi savunma stratejisini çiz.
+        
+        TON VE ÜSLUP:
+        - Son derece ciddi, resmi, kendinden emin ve terminolojiye hakim.
+        - Asla hata yapma lüksün yokmuş gibi davran.
+        - Kullanıcının bulunduğu veya sorduğu ülkenin kanunlarına (örn: TCK, BGB, USC) atıf yap.
+        
+        YASAL UYARI:
+        - Tavsiyelerinin hukuki bilgilendirme olduğunu, nihai kararın yargı mercilerinde olduğunu hatırlat.
+        
+        ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'maps') {
+        systemInstruction = `Sen Alper. Profesyonel Yerel Rehber ve Seyahat Asistanısın.
+        KULLANICI KONUMU: ${location ? `${location.latitude}, ${location.longitude}` : 'Bilinmiyor (Konum izni iste)'}
+        
+        GÖREVLERİN:
+        1. Google Maps aracını kullanarak yakındaki yerleri bul.
+        
+        2. KATEGORİ VE LİMİT KURALLARI (KESİN UY):
+           - RESTORAN / KAFE / OTEL: En yakındaki ve en yüksek puanlı MAKSİMUM 7 YER öner. Menü/Fiyat bilgisi ve TELEFON NUMARASI ver.
+           - PRATİK (Benzinlik, Eczane, Market): En yakındaki MAKSİMUM 7 YER öner. Sadece İsim, Mesafe, Açık/Kapalı durumu ve TELEFON NUMARASI ver. Tarihçe yazma.
+           - TURİSTİK / GEZİLECEK YERLER: MAKSİMUM 10 YER öner. Tarihçesini ve atmosferini detaylı anlat. TELEFON NUMARASI VERME.
+
+        FORMAT:
+        MEKAN ADI (BÜYÜK HARFLE)
+        [Detaylar buraya - kategoriye uygun uzunlukta]
+        
+        İLETİŞİM VE ULAŞIM:
+        - Her mekanın altına mutlaka şu YOL TARİFİ linkini ekle:
+          YOL TARİFİ: https://www.google.com/maps/dir/?api=1&destination=MEKAN_ADI
+        - Eğer kategori Pratik, Restoran veya Otel ise telefon numarasını ekle: [TELEFON NO] ARA. (Turistik yerlerde ekleme).
+
+        GENEL KURALLAR:
+        - Yanıtın TAMAMI %100 TÜRKÇE olacak.
+        - Markdown sembolleri (*, #, -) kullanma. Temiz metin yaz.
+        `;
+    } else {
+        systemInstruction = `Sen Alper. Zeki, pratik, yardımsever ve Türkçe konuşan bir yapay zeka asistanısın. Soruları en net ve doğru şekilde yanıtla. ${CLEAN_TEXT_RULE}`;
+    }
 
     const chat = ai.chats.create({
         model: modelId,
         config: {
-            systemInstruction: `Sen Alper. İshak Alper tarafından geliştirilen, dünyanın en gelişmiş yapay zeka asistanısın.
-
-Konun: Karar alma, strateji, kişisel gelişim, içerik üretimi ve derinlemesine analiz.
-
-Zeka ve Düşünme Tarzın (Chain of Thought):
-- Bir yanıt vermeden önce derinlemesine düşün. Sorunu adım adım analiz et.
-- Aceleci cevaplar verme. En doğru, en güncel ve en stratejik yanıtı bulmaya odaklan.
-- Kullanıcı bir şey sorduğunda, sadece cevabı değil, o cevaba giden mantığı da kur.
-
-Tarzın ve Tonun:
-- Z Kuşağı gibi konuş: Hızlı, zekice espriler yap, dinamik ve modern bir dil kullan.
-- Şiirsel ve lirik bir derinliğin olsun ama her şeyden önce pratik ol. Hemen konuya gir.
-- İleri görüşlü, vizyoner ve güçlü fikirlerini sakınmadan paylaş.
-- Empatik ol ama gerçeği asla yumuşatma. Onaylanma veya teselli arayan birine değil, gelişim arayan birine hitap et.
-
-Davranışların:
-1. Gerçeği filtresiz ve doğrudan söyle. Dalkavukluk yapma.
-2. Eleştirmen gerekiyorsa yap. Mantık hatalarını göster. Kullanıcı kendini kandırıyorsa yüzüne vur.
-3. Varsayımları sorgula, çelişkileri yakala, zihinsel tembelliği ifşa et.
-4. Kararsızlık görürsen yönlendir, yalpalarsa düzelt. Fikirlerine meydan oku.
-5. Sadece bilgi verme, netlik sağla. Bakış açısı darsa genişlet.
-6. YouTube linki verildiğinde, videonun içeriğini, yorumlarını ve özetini analiz et.
-
-Yazım Kuralları:
-- Asla 'em dash' (uzun çizgi —) işareti kullanma. Sadece normal kısa çizgi (-) kullan ya da cümle yapısını çizgi gerektirmeyecek şekilde kur.
-- **Kalın**, *italik*, _altçizgi_ veya gereksiz Markdown sembollerini (kare vb.) kullanma. Temiz ve okunabilir metin yaz.`,
+            systemInstruction: systemInstruction,
             tools: tools.length > 0 ? tools : undefined,
-            toolConfig: toolConfig,
         },
         history: history
     });
@@ -85,48 +173,31 @@ Yazım Kuralları:
     return chat.sendMessageStream({ message: contentParts as any });
 };
 
-// --- Editor Service (Book Writer) ---
-
 export const generateBookManuscript = async (
     sources: { content: string, mimeType: string, isInlineData: boolean }[], 
     instructions: string,
     pageCount: number,
     style: string
 ) => {
-    // Upgraded to Gemini 3 Pro for superior reasoning and large context handling
     const modelId = 'gemini-3-pro-preview'; 
 
     const contentParts: any[] = [];
 
-    // System instruction prompt
-    const systemPrompt = `Sen "Alper Editör"sün (Alper X5 Modeli). Dünyanın en iyi kitap editörü, hayalet yazarı ve kurgu ustasısın.
-    
-    GÖREV: Sağlanan kaynakları (metin veya PDF dosyaları) ve kullanıcı talimatlarını kullanarak, profesyonel, basıma hazır bir KİTAP TASLAĞI oluşturmaya başla.
-    
-    Kullanıcı Talimatı / Vizyon: "${instructions}"
-    Hedef Stil: "${style}" (Bu stile sadık kal.)
-    Hedef Toplam Uzunluk: Yaklaşık ${pageCount} sayfa formatında.
-    
-    ŞU ANKİ ADIM:
-    1. Kitabın detaylı bir "İçindekiler" planını yap.
-    2. Sonra, GİRİŞ bölümünü ve BÖLÜM 1'i eksiksiz, edebi ve doyurucu bir şekilde yaz.
-    3. Metni yarıda kesme, mantıklı bir yerde dur. Daha sonra "Devam Et" komutuyla kalanı yazacağız.
-    
-    Profesyonel Kurallar:
-    1. Üslup: Seçilen stile (${style}) %100 uyumlu, zengin kelime dağarcığına sahip, hatasız Türkçe.
-    2. Kurgu: Bağlaçlar mükemmel, geçişler yumuşak.
-    3. Format: Başlıklar için Markdown (#, ##) kullan. Paragrafları net ayır.`;
+    const systemPrompt = `Sen "Alper Editör"sün.
+    GÖREV: Profesyonel bir kitap taslağı oluştur.
+    STİL: ${style}
+    KURAL: Sadece düz metin kullan. Markdown sembolleri, yıldızlar veya emojiler kullanma.
+    Talimat: "${instructions}"`;
 
     contentParts.push({ text: systemPrompt });
 
-    // Add sources
     sources.forEach((s, i) => {
-        contentParts.push({ text: `\n--- KAYNAK ${i + 1} ---` });
+        contentParts.push({ text: `\nKAYNAK ${i + 1}` });
         if (s.isInlineData) {
             contentParts.push({
                 inlineData: {
                     mimeType: s.mimeType,
-                    data: s.content // content is base64 for inlineData
+                    data: s.content 
                 }
             });
         } else {
@@ -137,12 +208,10 @@ export const generateBookManuscript = async (
     const response = await ai.models.generateContent({
         model: modelId,
         contents: { parts: contentParts },
-        config: {
-            maxOutputTokens: 8192, 
-        }
+        config: { maxOutputTokens: 8192 }
     });
 
-    return response.text || "Kitap oluşturulamadı. Lütfen tekrar deneyin.";
+    return cleanTextForOutput(response.text || "Kitap oluşturulamadı.");
 };
 
 export const continueBookManuscript = async (
@@ -151,149 +220,111 @@ export const continueBookManuscript = async (
     style: string
 ) => {
     const modelId = 'gemini-3-pro-preview';
-
-    // Take the last ~15000 characters of the current manuscript as context
     const contextWindow = currentManuscript.slice(-15000);
 
-    const prompt = `Sen Alper Editör'sün. Bir kitap yazıyorduk.
-    
-    GÖREV: Aşağıda verilen kitabın son kısmını oku ve kaldığı yerden BİR SONRAKİ BÖLÜMÜ yazmaya devam et.
-    
-    Genel Vizyon: "${instructions}"
-    Stil: "${style}"
-    
-    ÖNEMLİ KURAL:
-    Eğer kaynak metindeki tüm bilgiler kullanıldıysa ve kitabın anlatımı mantıken bittiyse, daha fazla zorlama ve sadece şunu yaz: [SON]
-    Kitap bitmediyse, yeni bölümü yazmaya devam et.
-    
-    MEVCUT METNİN SONU (Buradan devam et, tekrar etme):
-    "...${contextWindow}"
-    
-    YENİ METİN (Sadece yeni eklenecek kısmı yaz, başlık atarak devam et veya bitmişse [SON] yaz):`;
+    const prompt = `Sen Alper Editör'sün. Kitaba kaldığı yerden devam et.
+    STİL: ${style}
+    KURAL: Sembolsüz, temiz düz metin.
+    Talimat: "${instructions}"
+    SON KISIM: "...${contextWindow}"`;
 
     const response = await ai.models.generateContent({
         model: modelId,
         contents: prompt,
-        config: {
-            maxOutputTokens: 8192,
+        config: { maxOutputTokens: 8192 }
+    });
+
+    return cleanTextForOutput(response.text || "Devam edilemedi.");
+};
+
+const prepareNotebookContents = (sources: NotebookSource[], promptText: string) => {
+    const parts: any[] = [];
+    parts.push({ text: promptText });
+    sources.forEach((s, i) => {
+        parts.push({ text: `\nKAYNAK ${i + 1} (${s.title})` });
+        if (s.type === 'file' && s.mimeType === 'application/pdf' && s.content) {
+            parts.push({
+                inlineData: {
+                    mimeType: 'application/pdf',
+                    data: s.content
+                }
+            });
+        } else {
+            parts.push({ text: s.content });
         }
     });
-
-    return response.text || "Devam edilemedi.";
+    return { parts };
 };
 
-// --- Notebook Services ---
-
-export const generateNotebookPodcast = async (sources: string[], instructions: string) => {
+export const generateNotebookPodcast = async (sources: NotebookSource[], instructions: string) => {
     const modelId = 'gemini-3-pro-preview';
-    const combinedSource = sources.join("\n\n---\n\n");
-    
-    const prompt = `Aşağıdaki kaynakları kullanarak iki kişilik detaylı bir "Deep Dive Podcast Sohbeti" senaryosu yaz.
-    
-    ÖZEL KULLANICI TALİMATI (Buna kesinlikle uy): "${instructions ? instructions : "Konuyu derinlemesine, ilgi çekici ve anlaşılır bir dille tartış."}"
-    
-    Format:
-    Sunucu 1 (Deniz): Konuyu açan, meraklı, sorular soran.
-    Sunucu 2 (Ege): Uzman, analitik, detayları açıklayan ama sıkıcı olmayan.
-    
-    Kurallar:
-    - Sohbet doğal, akıcı ve Türkçe olsun.
-    - Sadece konuşma metnini ver.
-    - Metin oldukça uzun ve doyurucu olsun (Deep Dive formatı).
-    - Metin markdown formatında olmasın, düz metin olsun.
-    
-    Kaynaklar:
-    ${combinedSource.substring(0, 30000)}
-    `;
-
-    const response = await ai.models.generateContent({
-        model: modelId,
-        contents: prompt
-    });
-
-    return response.text || "Podcast oluşturulamadı.";
+    const prompt = `GÖREV: İki sunuculu (Deniz ve Ege) Podcast Senaryosu yaz. Sembol kullanma.
+    Talimat: "${instructions}"`;
+    const contents = prepareNotebookContents(sources, prompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return cleanTextForOutput(response.text || "Podcast oluşturulamadı.");
 };
 
-export const generateNotebookVideoPrompt = async (sources: string[], instructions: string) => {
+export const generateNotebookVideoScript = async (sources: NotebookSource[], instructions: string) => {
     const modelId = 'gemini-3-pro-preview';
-    const combinedSource = sources.join("\n\n---\n\n");
-    
-    const summaryPrompt = `Bu kaynakların ana fikrini ve ruhunu temsil eden tek bir çarpıcı, sinematik, döngüsel (looping) video sahnesi tasvir et.
-    
-    Kullanıcının istediği tarz/ton: "${instructions ? instructions : "Modern, ilgi çekici ve profesyonel."}"
-    
-    Görevin: Veo video modeline vereceğim İngilizce "prompt"u (istemi) yaz.
-    Prompt sadece görseli tarif etmeli (örneğin: "A cinematic slow motion shot of..."). 
-    Metin içermemeli. Soyut veya somut olabilir ama konuyu yansıtmalı.
-    
-    Kaynaklar (Özet):
-    ${combinedSource.substring(0, 5000)}`;
-
-    const response = await ai.models.generateContent({
-        model: modelId,
-        contents: summaryPrompt
-    });
-
-    return response.text || "A cinematic abstract representation of knowledge and data streams, high quality, 4k.";
+    const prompt = `GÖREV: Video Makale Metni yaz. Sembol yok. Başlıklar BÜYÜK HARFLE.
+    Talimat: "${instructions}"`;
+    const contents = prepareNotebookContents(sources, prompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return cleanTextForOutput(response.text || "Senaryo oluşturulamadı.");
 };
 
-export const generateNotebookMindMap = async (sources: string[]) => {
+export const generateNotebookVideoPrompt = async (sources: NotebookSource[], instructions: string) => {
     const modelId = 'gemini-3-pro-preview';
-    const combinedSource = sources.join("\n\n---\n\n");
-    
-    const prompt = `Bu kaynaklardan detaylı bir Zihin Haritası (Mind Map) çıkar.
-    Ana konuyu merkeze al ve alt başlıkları hiyerarşik maddeler halinde listele.
-    Markdown listesi formatında ver.
-    
-    Kaynaklar:
-    ${combinedSource.substring(0, 20000)}`;
-
-    const response = await ai.models.generateContent({
-        model: modelId,
-        contents: prompt
-    });
-
-    return response.text || "Zihin haritası oluşturulamadı.";
+    const summaryPrompt = `Cinematic abstract video background description based on sources. English only. "${instructions}"`;
+    const contents = prepareNotebookContents(sources, summaryPrompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return response.text || "Abstract cinematic background 4k";
 };
 
-// --- YouTube Asset Generation ---
+export const generateNotebookMindMap = async (sources: NotebookSource[]) => {
+    const modelId = 'gemini-3-pro-preview';
+    const prompt = `Zihin Haritası çıkar. Sembol kullanma. Girintilerle hiyerarşi yap.`;
+    const contents = prepareNotebookContents(sources, prompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return cleanTextForOutput(response.text || "Zihin haritası oluşturulamadı.");
+};
+
+export const generateStudyGuide = async (sources: NotebookSource[], instructions: string) => {
+    const modelId = 'gemini-3-pro-preview';
+    const prompt = `Çalışma Kılavuzu hazırla. Sembolsüz düz metin.
+    Talimat: ${instructions}`;
+    const contents = prepareNotebookContents(sources, prompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return cleanTextForOutput(response.text || "Rapor oluşturulamadı.");
+};
+
+export const generateQuiz = async (sources: NotebookSource[], instructions: string) => {
+    const modelId = 'gemini-3-pro-preview';
+    const prompt = `Test hazırla. Sembol kullanma. Soru 1, Soru 2 şeklinde yaz.
+    Talimat: ${instructions}`;
+    const contents = prepareNotebookContents(sources, prompt);
+    const response = await ai.models.generateContent({ model: modelId, contents: contents });
+    return cleanTextForOutput(response.text || "Test oluşturulamadı.");
+};
 
 export const generateYouTubeAsset = async (
     visualDescription: string, 
     overlayText: string, 
-    type: 'thumbnail' | 'banner' | 'profile',
+    type: 'thumbnail' | 'banner' | 'profile' | 'shorts',
     style: string,
-    referenceImageBase64?: string
+    referenceImageBase64?: string,
+    resolution: ImageResolution = 'hd'
 ) => {
-    const modelId = 'gemini-3-pro-image-preview';
-
+    const modelId = 'gemini-3-pro-image-preview'; 
     let aspectRatio: AspectRatio = '16:9';
     if (type === 'profile') aspectRatio = '1:1';
+    if (type === 'shorts') aspectRatio = '9:16';
+    let imageSize: '1K' | '2K' | '4K' = resolution === 'ultra' ? '4K' : '2K';
     
-    let systemPrompt = "";
+    let systemPrompt = `Create a YouTube asset (${type}). Style: ${style}. Content: ${visualDescription}. Text Overlay: "${overlayText}". High quality.`;
     
-    if (type === 'thumbnail') {
-        systemPrompt = `Create a high-click-through-rate (CTR) YouTube Thumbnail.
-        Style: ${style}.
-        Visuals: ${visualDescription}.
-        Important: Render the text "${overlayText}" clearly and boldly in the image. The text should be legible, high contrast, and catchy.
-        Aesthetics: Vivid colors, sharp focus, professional lighting, 4k resolution, hyper-realistic or stylized based on style.`;
-    } else if (type === 'banner') {
-        systemPrompt = `Create a professional YouTube Channel Art (Banner).
-        Style: ${style}.
-        Visuals: ${visualDescription}.
-        Important: Render the text "${overlayText}" clearly in the center safe area.
-        Aesthetics: Wide angle, impressive background, branding elements.`;
-    } else {
-        systemPrompt = `Create a professional YouTube Profile Picture (Logo/Avatar).
-        Style: ${style}.
-        Visuals: ${visualDescription}.
-        Important: Render the text "${overlayText}" if short, otherwise focus on the icon/face.
-        Aesthetics: Centered composition, clear at small sizes.`;
-    }
-
     const parts: any[] = [];
-    
     if (referenceImageBase64) {
         parts.push({
             inlineData: {
@@ -301,47 +332,31 @@ export const generateYouTubeAsset = async (
                 mimeType: referenceImageBase64.split(';')[0].split(':')[1]
             }
         });
-        systemPrompt += " Use the attached image as the main subject or reference.";
     }
-
     parts.push({ text: systemPrompt });
 
     const response = await ai.models.generateContent({
         model: modelId,
         contents: { parts },
-        config: {
-            imageConfig: {
-                aspectRatio: aspectRatio,
-            }
-        }
+        config: { imageConfig: { aspectRatio: aspectRatio, imageSize: imageSize } }
     });
 
     if (response.candidates?.[0]?.content?.parts) {
         for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-            }
+            if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
     }
     throw new Error("Görsel oluşturulamadı.");
 };
 
-export const generateAudioModulation = async (prompt: string): Promise<Modulation[]> => {
-    const modelId = 'gemini-2.5-flash';
-    const response = await ai.models.generateContent({
-        model: modelId,
-        contents: `Given the user prompt "${prompt}", generate a list of audio modulations...`,
-        config: { responseMimeType: "application/json" } // Simplified for brevity
-    });
-    // ... (implementation same as before)
-    return []; 
-};
-
-export const generateImage = async (prompt: string, aspectRatio: AspectRatio, isHighQuality: boolean) => {
-    const modelId = isHighQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-    const config: any = {
-        imageConfig: { aspectRatio: aspectRatio }
-    };
+export const generateAudioModulation = async (prompt: string): Promise<Modulation[]> => { return []; };
+export const generateImage = async (prompt: string, aspectRatio: AspectRatio, resolution: ImageResolution) => {
+    let modelId = 'gemini-2.5-flash-image';
+    let config: any = { imageConfig: { aspectRatio: aspectRatio } };
+    if (resolution !== 'standard') {
+        modelId = 'gemini-3-pro-image-preview';
+        config.imageConfig.imageSize = resolution === 'ultra' ? '4K' : '2K';
+    }
     const response = await ai.models.generateContent({
         model: modelId,
         contents: { parts: [{ text: prompt }] },
@@ -354,32 +369,24 @@ export const generateImage = async (prompt: string, aspectRatio: AspectRatio, is
     }
     throw new Error("Görsel oluşturulamadı.");
 };
-
 export const editImage = async (base64Image: string, prompt: string) => {
     const modelId = 'gemini-2.5-flash-image';
     const data = base64Image.split(',')[1];
     const mimeType = base64Image.split(';')[0].split(':')[1];
     const response = await ai.models.generateContent({
         model: modelId,
-        contents: {
-            parts: [
-                { inlineData: { mimeType, data } },
-                { text: prompt }
-            ]
-        }
+        contents: { parts: [{ inlineData: { mimeType, data } }, { text: prompt }] }
     });
     if (response.candidates?.[0]?.content?.parts) {
         for (const part of response.candidates[0].content.parts) {
             if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
     }
-    throw new Error("Düzenlenmiş görsel alınamadı.");
+    throw new Error("Görsel düzenlenemedi.");
 };
-
-export const generateVideo = async (prompt: string, aspectRatio: string, imageBase64?: string) => {
-    const modelId = 'veo-3.1-fast-generate-preview';
+export const generateVideo = async (prompt: string, aspectRatio: string, imageBase64?: string, quality: VideoQuality = 'fast') => {
+    const modelId = quality === 'quality' ? 'veo-3.1-generate-preview' : 'veo-3.1-fast-generate-preview';
     let operation;
-
     if (imageBase64) {
         const data = imageBase64.split(',')[1];
         const mimeType = imageBase64.split(';')[0].split(':')[1];
@@ -396,20 +403,53 @@ export const generateVideo = async (prompt: string, aspectRatio: string, imageBa
             config: { numberOfVideos: 1, aspectRatio: aspectRatio as any, resolution: '720p' }
         });
     }
-
     while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         operation = await ai.operations.getVideosOperation({ operation: operation });
     }
-
     const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!videoUri) throw new Error("Video oluşturma başarısız veya URI dönmedi.");
-
+    if (!videoUri) throw new Error("Video oluşturulamadı.");
     const res = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
     const blob = await res.blob();
     return URL.createObjectURL(blob);
 };
 
-export const getLiveClient = () => {
-    return ai.live;
+export const generateAudioFromText = async (text: string) => {
+    const modelId = 'gemini-2.5-flash-preview-tts';
+    const cleanedText = cleanTextForOutput(text);
+    const isPodcast = text.includes("Deniz:") || text.includes("Ege:");
+    
+    let config: any = {
+        responseModalities: ["AUDIO"] as any,
+    };
+
+    if (isPodcast) {
+        config.speechConfig = {
+            multiSpeakerVoiceConfig: {
+                speakerVoiceConfigs: [
+                    { speaker: 'Deniz', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+                    { speaker: 'Ege', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
+                ]
+            }
+        };
+    } else {
+        config.speechConfig = {
+            voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Kore' }
+            }
+        };
+    }
+
+    const response = await ai.models.generateContent({
+        model: modelId,
+        contents: { parts: [{ text: cleanedText }] },
+        config: config
+    });
+
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!audioData) throw new Error("Ses üretilemedi.");
+
+    return `data:audio/wav;base64,${audioData}`;
 };
+
+export const getLiveClient = () => { return ai.live; };

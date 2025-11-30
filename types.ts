@@ -4,7 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor';
+export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer';
+export type PsychologistSubMode = 'therapy' | 'academic';
+
+export interface UserProfile {
+    name: string;
+    email: string;
+    role: string;
+    bio: string;
+    avatar?: string;
+}
 
 export interface Attachment {
     data: string; // base64
@@ -33,13 +42,15 @@ export interface GeneratedMedia {
 export interface NotebookSource {
     id: string;
     title: string;
-    content: string;
-    type: 'text' | 'file';
+    content: string; // Text content or Base64 data for files
+    type: 'text' | 'file' | 'youtube';
+    mimeType?: string; // For files (application/pdf, text/plain)
+    url?: string; // For YouTube
 }
 
 export interface NotebookEntry {
     id: string;
-    type: 'podcast' | 'video_summary' | 'mind_map';
+    type: 'podcast' | 'video_summary' | 'mind_map' | 'reports' | 'flashcards' | 'quiz' | 'infographic' | 'slides';
     title: string;
     content: string; // Podcast script or video URL or Mind map markdown
     isLoading?: boolean;
@@ -55,11 +66,13 @@ export interface SocialFormat {
 }
 
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+export type ImageResolution = 'standard' | 'hd' | 'ultra'; // standard=flash, hd=2k(pro), ultra=4k(pro)
+export type VideoQuality = 'fast' | 'quality'; // fast=veo-fast, quality=veo-full
 
 export const SOCIAL_FORMATS: { [key: string]: SocialFormat } = {
-    YOUTUBE: { label: 'Yatay', platform: 'YouTube', value: '16:9', icon: 'smart_display', description: 'Video (1920x1080)' },
-    TIKTOK: { label: 'Dikey', platform: 'TikTok/Reels', value: '9:16', icon: 'phonelink_ring', description: 'Shorts (1080x1920)' },
-    INSTAGRAM: { label: 'Kare', platform: 'Instagram', value: '1:1', icon: 'photo_camera', description: 'Gönderi (1080x1080)' },
+    YOUTUBE: { label: 'Yatay (Video)', platform: 'YouTube', value: '16:9', icon: 'smart_display', description: 'Video (1920x1080)' },
+    TIKTOK: { label: 'Dikey (Shorts/Reels)', platform: 'TikTok/Instagram', value: '9:16', icon: 'phonelink_ring', description: 'Shorts (1080x1920)' },
+    INSTAGRAM: { label: 'Kare (Gönderi)', platform: 'Instagram', value: '1:1', icon: 'photo_camera', description: 'Gönderi (1080x1080)' },
 };
 
 export enum AiStage {

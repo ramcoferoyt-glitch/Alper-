@@ -5,7 +5,7 @@
 */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry } from '../types';
+import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile } from '../types';
 import { useAppStoreComplete } from '../hooks/useAppStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -30,11 +30,29 @@ interface AppUIState {
     removeNotebookSource: (id: string) => void;
     notebookEntries: NotebookEntry[];
     addNotebookEntry: (entry: NotebookEntry) => void;
+    // Live Persona State
+    livePersona: 'assistant' | 'psychologist';
+    setLivePersona: React.Dispatch<React.SetStateAction<'assistant' | 'psychologist'>>;
+    psychologistSubMode: PsychologistSubMode;
+    setPsychologistSubMode: React.Dispatch<React.SetStateAction<PsychologistSubMode>>;
+    // User Profile State
+    userProfile: UserProfile;
+    updateUserProfile: (profile: Partial<UserProfile>) => void;
+    isProfileModalOpen: boolean;
+    setIsProfileModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export type AppContextType = ReturnType<typeof useAppStoreComplete> & AppUIState;
 
 const AppContext = createContext<AppContextType | null>(null);
+
+const DEFAULT_PROFILE: UserProfile = {
+    name: 'Misafir Kullanıcı',
+    email: '',
+    role: 'Yaratıcı',
+    bio: '',
+    avatar: ''
+};
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const store = useAppStoreComplete();
@@ -42,11 +60,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Initialize chat and gallery state if not handled by store directly
     const [mode, setMode] = useState<AppMode>('chat');
     
-    // PREMIUM WELCOME MESSAGE
+    // User Profile (Load from LocalStorage)
+    const [userProfile, setUserProfile] = useState<UserProfile>(() => {
+        const saved = localStorage.getItem('alper_user_profile');
+        return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+    });
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+    // Save profile on change
+    useEffect(() => {
+        localStorage.setItem('alper_user_profile', JSON.stringify(userProfile));
+    }, [userProfile]);
+
+    const updateUserProfile = (newProfile: Partial<UserProfile>) => {
+        setUserProfile(prev => ({ ...prev, ...newProfile }));
+    };
+
+    // SIMPLIFIED PROFESSIONAL WELCOME MESSAGE
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([{
         id: 'welcome',
         role: 'model',
-        text: "**Merhaba. Ben Alper.**\n\nStratejik zekan ve yaratıcı partnerin. Senin için ne yapabilirim?\n\n• Analiz yapabilir ve akıl verebilirim.\n• Görsel ve videolar tasarlayabilirim.\n• YouTube içeriklerini özetleyebilirim.\n• Sesli ve görüntülü sohbet edebilirim.",
+        text: `**Merhaba ${userProfile.name !== 'Misafir Kullanıcı' ? userProfile.name : ''}. Ben Alper.**
+        
+        Zekam ve yaratıcılığım emrine amade. Analiz etmek, tasarlamak, yazmak veya sadece sohbet etmek için buradayım.
+        
+        _Bugün birlikte neyi gerçeğe dönüştürüyoruz?_`,
         timestamp: Date.now()
     }]);
 
@@ -59,6 +97,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Notebook State
     const [notebookSources, setNotebookSources] = useState<NotebookSource[]>([]);
     const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
+
+    // Live Persona State
+    const [livePersona, setLivePersona] = useState<'assistant' | 'psychologist'>('assistant');
+    const [psychologistSubMode, setPsychologistSubMode] = useState<PsychologistSubMode>('therapy');
 
     const addChatMessage = (message: ChatMessage) => {
         setChatHistory(prev => [...prev, message]);
@@ -121,7 +163,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addNotebookSource,
         removeNotebookSource,
         notebookEntries,
-        addNotebookEntry
+        addNotebookEntry,
+        livePersona,
+        setLivePersona,
+        psychologistSubMode,
+        setPsychologistSubMode,
+        userProfile,
+        updateUserProfile,
+        isProfileModalOpen,
+        setIsProfileModalOpen
     };
 
     return (
