@@ -61,7 +61,7 @@ export const NavigationMenu: React.FC = () => {
                                     <h3 className="font-bold text-white text-sm truncate group-hover:text-blue-300 transition-colors tracking-wide">
                                         {userProfile.name || 'Misafir Kullanıcı'}
                                     </h3>
-                                    <p className="text-xs text-gray-400 truncate font-medium">{userProfile.role || 'Profilinizi Oluşturun'}</p>
+                                    <p className="text-xs text-gray-400 truncate font-medium">{userProfile.role || 'Ayarlar'}</p>
                                 </div>
                                 <span className="material-symbols-outlined text-gray-500 group-hover:text-white transition-colors" aria-hidden="true">settings</span>
                             </button>
@@ -80,6 +80,14 @@ export const NavigationMenu: React.FC = () => {
                                     isActive={mode === 'chat'} 
                                     onClick={() => handleModeChange('chat')} 
                                     theme="blue"
+                                />
+                                <MenuItem 
+                                    icon="smart_toy" 
+                                    label="Alper Ajan" 
+                                    desc="Otonom Araştırma & Eğitim"
+                                    isActive={mode === 'agent'} 
+                                    onClick={() => handleModeChange('agent')} 
+                                    theme="purple"
                                 />
                             </div>
 
@@ -209,6 +217,19 @@ export const NavigationMenu: React.FC = () => {
                                         <span className="block text-[10px] text-gray-500 group-hover:text-gray-400">Video Özeti ve Raporu</span>
                                     </div>
                                 </button>
+                            </div>
+
+                            {/* Section: Data */}
+                            <div className="space-y-3">
+                                <h3 className="text-[10px] font-extrabold text-gray-500 uppercase tracking-widest px-2">Veri</h3>
+                                <MenuItem 
+                                    icon="database" 
+                                    label="Veri Bellek" 
+                                    desc="Geçmiş Sohbetler & Bilgi Deposu"
+                                    isActive={mode === 'memory'} 
+                                    onClick={() => handleModeChange('memory')} 
+                                    theme="blue"
+                                />
                             </div>
                         </div>
                         

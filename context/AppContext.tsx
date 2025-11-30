@@ -5,7 +5,7 @@
 */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile } from '../types';
+import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile, SavedSession } from '../types';
 import { useAppStoreComplete } from '../hooks/useAppStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -40,6 +40,10 @@ interface AppUIState {
     updateUserProfile: (profile: Partial<UserProfile>) => void;
     isProfileModalOpen: boolean;
     setIsProfileModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+    // Memory State
+    savedSessions: SavedSession[];
+    deleteSession: (id: string) => void;
+    loadSessionToChat: (id: string) => void;
 }
 
 export type AppContextType = ReturnType<typeof useAppStoreComplete> & AppUIState;
@@ -51,7 +55,17 @@ const DEFAULT_PROFILE: UserProfile = {
     email: '',
     role: 'Yaratıcı',
     bio: '',
-    avatar: ''
+    avatar: '',
+    preferences: {
+        allowBackgroundProcessing: false,
+        dailyBriefing: false,
+        notifications: {
+            email: false,
+            sms: false,
+            push: true
+        },
+        theme: 'dark'
+    }
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -63,7 +77,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // User Profile (Load from LocalStorage)
     const [userProfile, setUserProfile] = useState<UserProfile>(() => {
         const saved = localStorage.getItem('alper_user_profile');
-        return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+        // Merge with default to ensure new fields exist
+        return saved ? { ...DEFAULT_PROFILE, ...JSON.parse(saved) } : DEFAULT_PROFILE;
     });
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
@@ -76,14 +91,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserProfile(prev => ({ ...prev, ...newProfile }));
     };
 
-    // SIMPLIFIED PROFESSIONAL WELCOME MESSAGE
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([{
         id: 'welcome',
         role: 'model',
         text: `**Merhaba ${userProfile.name !== 'Misafir Kullanıcı' ? userProfile.name : ''}. Ben Alper.**
         
-        Zekam ve yaratıcılığım emrine amade. Analiz etmek, tasarlamak, yazmak veya sadece sohbet etmek için buradayım.
-        
+        Zekam ve yaratıcılığım emrine amade.
         _Bugün birlikte neyi gerçeğe dönüştürüyoruz?_`,
         timestamp: Date.now()
     }]);
@@ -102,11 +115,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [livePersona, setLivePersona] = useState<'assistant' | 'psychologist'>('assistant');
     const [psychologistSubMode, setPsychologistSubMode] = useState<PsychologistSubMode>('therapy');
 
+    // Memory State
+    const [savedSessions, setSavedSessions] = useState<SavedSession[]>(() => {
+        const saved = localStorage.getItem('alper_chat_memory');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    useEffect(() => {
+        localStorage.setItem('alper_chat_memory', JSON.stringify(savedSessions));
+    }, [savedSessions]);
+
+    // Auto-save chat history to memory when leaving a mode or app unmounts
+    // Simplified: Just save significant sessions manually or periodically
+    // For now, we will add a function to explicit save context if needed, 
+    // but we can also treat the "chatHistory" as current session.
+    
+    const saveCurrentSessionToMemory = () => {
+        if (chatHistory.length <= 1) return; // Don't save empty/welcome sessions
+        const lastMsg = chatHistory[chatHistory.length - 1];
+        const preview = lastMsg.text.substring(0, 50) + '...';
+        const newSession: SavedSession = {
+            id: uuidv4(),
+            date: Date.now(),
+            mode: mode,
+            title: `${mode.toUpperCase()} - ${new Date().toLocaleDateString()}`,
+            preview,
+            messages: [...chatHistory]
+        };
+        setSavedSessions(prev => [newSession, ...prev]);
+    };
+
+    // Effect: Save session when mode changes (if session has content)
+    useEffect(() => {
+        return () => {
+            // Cleanup/Save on mode switch logic could go here
+            // Implementing a simpler manual approach for stability
+        };
+    }, [mode]);
+
+    const deleteSession = (id: string) => {
+        setSavedSessions(prev => prev.filter(s => s.id !== id));
+    };
+
+    const loadSessionToChat = (id: string) => {
+        const session = savedSessions.find(s => s.id === id);
+        if (session) {
+            setMode(session.mode);
+            setChatHistory(session.messages);
+        }
+    };
+
     const addChatMessage = (message: ChatMessage) => {
         setChatHistory(prev => [...prev, message]);
     };
 
     const clearChat = () => {
+        // Save before clearing?
+        saveCurrentSessionToMemory();
         setChatHistory([]);
     };
 
@@ -171,7 +236,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userProfile,
         updateUserProfile,
         isProfileModalOpen,
-        setIsProfileModalOpen
+        setIsProfileModalOpen,
+        savedSessions,
+        deleteSession,
+        loadSessionToChat
     };
 
     return (

@@ -4,15 +4,35 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer';
+export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer' | 'agent' | 'memory';
 export type PsychologistSubMode = 'therapy' | 'academic';
 
 export interface UserProfile {
     name: string;
     email: string;
+    phone?: string;
     role: string;
     bio: string;
     avatar?: string;
+    preferences: {
+        allowBackgroundProcessing: boolean;
+        dailyBriefing: boolean;
+        notifications: {
+            email: boolean;
+            sms: boolean;
+            push: boolean;
+        };
+        theme: 'dark' | 'light'; // For future use
+    };
+}
+
+export interface SavedSession {
+    id: string;
+    date: number;
+    mode: AppMode;
+    title: string; // Auto-generated summary title
+    preview: string; // First few words
+    messages: ChatMessage[];
 }
 
 export interface Attachment {

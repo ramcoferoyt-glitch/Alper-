@@ -274,7 +274,7 @@ export const ChatInterface: React.FC = () => {
 
         const apiHistory = chatHistory.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
         const mapsActive = mode === 'maps';
-        const searchActive = useSearch || mode === 'maps' || mode === 'finance' || mode === 'lawyer';
+        const searchActive = useSearch || mode === 'maps' || mode === 'finance' || mode === 'lawyer' || mode === 'agent';
         let finalLocation = locationData || userLocation;
 
         try {
@@ -361,6 +361,7 @@ export const ChatInterface: React.FC = () => {
     else if (mode === 'finance') placeholderText = "Piyasa durumu, yatırım fikri veya bütçe planı sor...";
     else if (mode === 'personal_coach') placeholderText = "Hedefin ne? Alışkanlıklar, planlama veya motivasyon...";
     else if (mode === 'lawyer') placeholderText = "Hukuki sorununu, iltica durumunu veya davayı anlat...";
+    else if (mode === 'agent') placeholderText = "Araştırılacak konu veya öğrenmek istediğin şey...";
 
     return (
         <div className="flex flex-col h-full bg-transparent relative font-sans">
@@ -376,6 +377,7 @@ export const ChatInterface: React.FC = () => {
                              mode === 'finance' ? 'Alper Finans' : 
                              mode === 'personal_coach' ? 'Alper Koç' :
                              mode === 'lawyer' ? 'Alper Hukuk' :
+                             mode === 'agent' ? 'Alper Ajan' :
                              'Alper AI'}
                         </span>
                     </h2>

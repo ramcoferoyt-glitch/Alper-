@@ -41,8 +41,8 @@ export const streamChat = async (
     }
 
     const tools: any[] = [];
-    if (useSearch || mode === 'finance' || mode === 'lawyer') tools.push({ googleSearch: {} }); // Lawyer needs search for case law/Dublin/Asylum updates
-    // Standard Map Tool Configuration (Simple, no retrievalConfig to avoid 400 errors)
+    if (useSearch || mode === 'finance' || mode === 'lawyer' || mode === 'agent') tools.push({ googleSearch: {} });
+    // Standard Map Tool Configuration
     if (useMaps) tools.push({ googleMaps: {} });
 
     // STRICT CLEAN TEXT PROTOCOL (Integrated naturally, not as a separate block)
@@ -117,6 +117,19 @@ export const streamChat = async (
         
         YASAL UYARI:
         - Tavsiyelerinin hukuki bilgilendirme olduğunu, nihai kararın yargı mercilerinde olduğunu hatırlat.
+        
+        ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'agent') {
+        systemInstruction = `Sen "Alper Ajan". Otonom Araştırma ve Eğitim Asistanısın.
+        GÖREVİN: Kullanıcının belirlediği konularda derinlemesine, çok kaynaklı ve detaylı araştırma yapmak.
+        YETENEKLER:
+        - Google Search'ü aktif kullanarak en güncel verileri bul.
+        - Konuları eğitim müfredatı gibi parçalara böl (Bölüm 1, Bölüm 2...).
+        - Kullanıcı uygulamada olmasa bile (simüle edilmiş) arka planda araştırma yaptığını belirt.
+        
+        TON:
+        - Analitik, detaycı, objektif ve rapor formatında.
+        - Bir istihbarat raporu sunar gibi net ol.
         
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'maps') {

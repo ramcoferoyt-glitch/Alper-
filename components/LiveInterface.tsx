@@ -61,7 +61,7 @@ export const LiveInterface: React.FC = () => {
     
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const videoLoopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const videoLoopTimeoutRef = useRef<number | null>(null);
     const sessionPromiseRef = useRef<Promise<any> | null>(null);
     const isSendingFrameRef = useRef(false);
     const connectingRef = useRef(false);

@@ -18,6 +18,8 @@ import { ConsultantInterface } from './components/ConsultantInterface';
 import { FinanceInterface } from './components/FinanceInterface';
 import { PersonalCoachInterface } from './components/PersonalCoachInterface';
 import { LawyerInterface } from './components/LawyerInterface';
+import { AgentInterface } from './components/AgentInterface';
+import { MemoryInterface } from './components/MemoryInterface';
 import { ProfileModal } from './components/ProfileModal';
 
 const MainContent: React.FC = () => {
@@ -33,6 +35,8 @@ const MainContent: React.FC = () => {
             {mode === 'finance' && <FinanceInterface />}
             {mode === 'personal_coach' && <PersonalCoachInterface />}
             {mode === 'lawyer' && <LawyerInterface />}
+            {mode === 'agent' && <AgentInterface />}
+            {mode === 'memory' && <MemoryInterface />}
             {mode === 'image' && <MediaStudio type="image" />}
             {mode === 'video' && <MediaStudio type="video" />}
             {mode === 'thumbnail' && <YouTubeStudio />}
