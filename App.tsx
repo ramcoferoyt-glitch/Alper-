@@ -29,7 +29,7 @@ const MainContent: React.FC = () => {
         <div className="flex-grow h-full overflow-hidden relative">
             {mode === 'chat' && <ChatInterface />}
             {mode === 'notebook' && <NotebookInterface />}
-            {mode === 'maps' && <ChatInterface />} {/* Maps uses ChatInterface but with specific chips */}
+            {mode === 'maps' && <ChatInterface />}
             {mode === 'psychologist' && <PsychologistInterface />}
             {mode === 'consultant' && <ConsultantInterface />}
             {mode === 'finance' && <FinanceInterface />}
@@ -51,9 +51,11 @@ const MainContent: React.FC = () => {
 const App: React.FC = () => {
     return (
         <AppProvider>
-            <div className="flex h-screen w-screen bg-gray-950 text-white overflow-hidden font-sans relative">
+            {/* Main Wrapper with Premium Dark Theme */}
+            <div className="flex h-[100dvh] w-screen bg-[#050505] text-white overflow-hidden font-sans relative selection:bg-amber-500/30">
                 <NavigationMenu />
-                <main className="flex-grow h-full relative bg-gray-900 w-full overflow-hidden">
+                <main className="flex-grow h-full relative bg-gradient-to-br from-[#050505] via-[#0a0a0a] to-[#111] w-full overflow-hidden">
+                    {/* Subtle noise texture or ambient glow could go here */}
                     <MainContent />
                 </main>
             </div>

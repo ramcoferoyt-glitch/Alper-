@@ -85,20 +85,29 @@ export const LiveInterface: React.FC = () => {
     };
 
     const cleanup = () => {
-        if (videoLoopTimeoutRef.current) clearTimeout(videoLoopTimeoutRef.current);
+        if (videoLoopTimeoutRef.current) {
+            clearTimeout(videoLoopTimeoutRef.current);
+            videoLoopTimeoutRef.current = null;
+        }
         
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(t => t.stop());
             streamRef.current = null;
         }
         
-        processorRef.current?.disconnect();
-        sourceRef.current?.disconnect();
-        processorRef.current = null;
-        sourceRef.current = null;
+        if (processorRef.current) {
+            processorRef.current.disconnect();
+            processorRef.current = null;
+        }
+        if (sourceRef.current) {
+            sourceRef.current.disconnect();
+            sourceRef.current = null;
+        }
 
         stopAudioPlayback();
         
+        // Don't close AudioContext if we plan to reuse it immediately, 
+        // but for full cleanup, close it.
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
             audioContextRef.current.close().catch(() => {});
         }
@@ -166,12 +175,13 @@ export const LiveInterface: React.FC = () => {
             // Input Context (Mic)
             const inputCtx = new AudioContext({ sampleRate: 16000 });
 
-            // CRITICAL: Force Resume contexts to unlock audio on mobile
+            // CRITICAL: Force Resume contexts immediately to unlock audio on iOS/Android
             await outputCtx.resume();
             await inputCtx.resume();
             
             nextStartTimeRef.current = outputCtx.currentTime + 0.1; 
             
+            // Get Media Stream (Lower resolution for mobile stability)
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     echoCancellation: true,
@@ -180,7 +190,7 @@ export const LiveInterface: React.FC = () => {
                     sampleRate: 16000,
                     channelCount: 1
                 }, 
-                video: { width: 320, height: 240, facingMode: facingMode }
+                video: { width: 240, height: 180, facingMode: facingMode } // Lower res for mobile bandwidth
             });
             streamRef.current = stream;
             
@@ -308,7 +318,7 @@ export const LiveInterface: React.FC = () => {
                     onclose: () => cleanup(),
                     onerror: (e) => {
                         console.error(e);
-                        setStatus("Hata oluştu");
+                        setStatus("Bağlantı Hatası. Tekrar dene.");
                         cleanup();
                     }
                 },
@@ -325,7 +335,7 @@ export const LiveInterface: React.FC = () => {
 
         } catch (e) {
             console.error(e);
-            setStatus("İzin Gerekli");
+            setStatus("Bağlantı Kurulamadı");
             cleanup();
         }
     };
@@ -355,12 +365,13 @@ export const LiveInterface: React.FC = () => {
         const ctx = canvasEl.getContext('2d');
         if (ctx) {
             isSendingFrameRef.current = true;
-            // Capture small frame for speed (320x240 is standard for Gemini Live vision)
-            canvasEl.width = 320;
-            canvasEl.height = 240;
+            // Capture small frame for speed (240x180 is enough for mood/presence on mobile)
+            canvasEl.width = 240;
+            canvasEl.height = 180;
             ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
             
-            const base64 = canvasEl.toDataURL('image/jpeg', 0.5).split(',')[1];
+            // Lower quality JPEG for speed
+            const base64 = canvasEl.toDataURL('image/jpeg', 0.4).split(',')[1];
             
             sessionPromiseRef.current.then(session => {
                 session.sendRealtimeInput({ 
@@ -370,8 +381,8 @@ export const LiveInterface: React.FC = () => {
                 console.warn("Frame drop", e);
             }).finally(() => {
                 isSendingFrameRef.current = false;
-                // Schedule next frame (~3-4 FPS)
-                videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 250);
+                // Schedule next frame (~3 FPS)
+                videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 300);
             });
         } else {
              videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 250);
@@ -395,14 +406,14 @@ export const LiveInterface: React.FC = () => {
     };
 
     return (
-        <div className={`flex flex-col items-center justify-between h-full text-white p-6 relative overflow-hidden font-sans transition-colors duration-1000 ${
+        <div className={`flex flex-col items-center justify-between h-[100dvh] text-white p-4 relative overflow-hidden font-sans transition-colors duration-1000 ${
             currentMode === 'psychologist' ? 'bg-teal-950' : 
             currentMode === 'storyteller' ? 'bg-indigo-950' : 
             currentMode === 'romance' ? 'bg-pink-950' :
             'bg-black'}`}>
             
             {/* Header Controls */}
-            <div className="absolute top-6 left-6 z-50 flex gap-4">
+            <div className="absolute top-4 left-4 z-50 flex gap-4">
                 <button 
                     onClick={handleBack}
                     className="p-3 bg-gray-800/50 hover:bg-gray-700 rounded-full backdrop-blur-md text-white border border-gray-700 transition-all shadow-lg"
@@ -414,10 +425,10 @@ export const LiveInterface: React.FC = () => {
             </div>
 
             {/* Mode Selector (Top Right) */}
-            <div className="absolute top-6 right-6 z-50">
+            <div className="absolute top-4 right-4 z-50">
                 <button 
                     onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-800/60 backdrop-blur-md border border-gray-700 rounded-full text-sm font-bold hover:bg-gray-700 transition-all shadow-lg"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 backdrop-blur-md border border-gray-700 rounded-full text-xs sm:text-sm font-bold hover:bg-gray-700 transition-all shadow-lg"
                     aria-haspopup="true"
                     aria-expanded={isModeMenuOpen}
                     aria-label="Mod Seçimi Menüsü"
@@ -479,7 +490,7 @@ export const LiveInterface: React.FC = () => {
             } ${isConnected ? 'opacity-100' : 'opacity-40'}`} aria-hidden="true"></div>
             
             {/* Main Visual Content */}
-            <div className="relative z-10 flex flex-col items-center justify-center flex-grow w-full max-w-lg">
+            <div className="relative z-10 flex flex-col items-center justify-center flex-grow w-full max-w-lg mt-12 mb-4">
                 
                 {/* Camera Feed */}
                 <div className={`relative w-full aspect-[3/4] md:aspect-square bg-black rounded-3xl overflow-hidden border border-gray-800 shadow-2xl transition-all duration-500 ${isCameraOn ? 'opacity-100 scale-100' : 'opacity-0 scale-95 h-0 absolute'}`}>
@@ -525,15 +536,15 @@ export const LiveInterface: React.FC = () => {
                         </div>
                         
                         <div className="text-center space-y-2">
-                            <h2 className="text-3xl font-bold tracking-tight text-white">{isConnected ? (isSpeaking ? (currentMode === 'romance' ? 'Dinliyorum Aşkım...' : 'Dinliyor...') : 'Bağlı') : 'Bekleniyor'}</h2>
-                            <p className="text-gray-400 font-medium">{status}</p>
+                            <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white">{isConnected ? (isSpeaking ? (currentMode === 'romance' ? 'Dinliyorum Aşkım...' : 'Dinliyor...') : 'Bağlı') : 'Bekleniyor'}</h2>
+                            <p className="text-sm md:text-base text-gray-400 font-medium">{status}</p>
                         </div>
                     </div>
                 )}
             </div>
 
             {/* Bottom Controls */}
-            <div className="relative z-20 w-full max-w-lg mt-auto pb-4">
+            <div className="relative z-20 w-full max-w-lg mt-auto pb-6 px-2">
                 {!isConnected ? (
                     <div className="flex flex-col gap-4">
                         <div className="flex justify-center gap-4 mb-4" role="group" aria-label="Ses Seçimi">
@@ -558,7 +569,7 @@ export const LiveInterface: React.FC = () => {
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
                         {/* Mute Button */}
                         <button 
                             onClick={() => {

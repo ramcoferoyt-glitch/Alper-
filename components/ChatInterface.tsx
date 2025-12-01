@@ -384,7 +384,8 @@ export const ChatInterface: React.FC = () => {
                 </div>
             </div>
 
-            <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 pt-24 pb-48 lg:pb-36 space-y-6 custom-scrollbar relative">
+            {/* Chat History Area - Increased bottom padding for mobile input overlap prevention */}
+            <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 pt-24 pb-52 lg:pb-36 space-y-6 custom-scrollbar relative">
                 {chatHistory.map((msg, idx) => (
                     (msg.text || msg.attachments?.length) && (
                         <div key={msg.id + idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn group`}>
@@ -412,7 +413,7 @@ export const ChatInterface: React.FC = () => {
 
             {/* Thinking Indicator - Always visible when processing */}
             {isChatProcessing && (
-                <div className="absolute bottom-28 left-4 z-40 animate-fadeIn pointer-events-none">
+                <div className="absolute bottom-36 lg:bottom-28 left-4 z-40 animate-fadeIn pointer-events-none">
                     <div className="bg-gray-900/90 backdrop-blur p-3 rounded-2xl rounded-bl-none border border-gray-700 flex items-center gap-3 shadow-2xl">
                         <div className="flex gap-1">
                             <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"></span>
@@ -424,6 +425,7 @@ export const ChatInterface: React.FC = () => {
                 </div>
             )}
 
+            {/* Input Bar - Positioned with safe area for mobile */}
             <div className="absolute bottom-0 left-0 right-0 p-4 lg:p-6 bg-gradient-to-t from-gray-950 via-gray-950/95 to-transparent z-30">
                 <div className="max-w-4xl mx-auto flex flex-col gap-2">
                     {mode === 'maps' && (
@@ -461,7 +463,7 @@ export const ChatInterface: React.FC = () => {
                                 className="p-3 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-all" 
                                 aria-label="Dosya Ekle"
                                 title="Dosya Ekle"
-                             >
+                            >
                                 <span className="material-symbols-outlined text-xl" aria-hidden="true">add_circle</span>
                              </button>
                         </div>

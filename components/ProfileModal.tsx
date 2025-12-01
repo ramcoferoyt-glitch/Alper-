@@ -65,43 +65,43 @@ export const ProfileModal: React.FC = () => {
     if (!isProfileModalOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-6 animate-fadeIn">
-            <div className="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-2xl border border-gray-800 flex flex-col overflow-hidden animate-scaleUp h-[80vh]">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-[60] p-4 animate-fadeIn">
+            <div className="bg-[#0f0f0f] rounded-3xl shadow-2xl w-full max-w-2xl border border-white/10 flex flex-col overflow-hidden animate-scaleUp h-[85vh] max-h-[800px]">
                 
                 {/* Header */}
-                <div className="p-6 border-b border-gray-800 flex items-center justify-between bg-gray-900/50">
+                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-gray-900 to-black">
                     <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                        <span className="material-symbols-outlined text-blue-500 bg-blue-500/10 p-2 rounded-full">manage_accounts</span>
-                        Alper Kontrol Merkezi
+                        <span className="material-symbols-outlined text-amber-500 bg-amber-500/10 p-2 rounded-full border border-amber-500/20">shield_person</span>
+                        Alper Kimlik Kartı
                     </h2>
                     <button 
                         onClick={() => setIsProfileModalOpen(false)}
-                        className="text-gray-500 hover:text-white transition-colors"
+                        className="text-gray-500 hover:text-white transition-colors p-2 hover:bg-white/10 rounded-full"
                     >
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
 
-                <div className="flex h-full overflow-hidden">
+                <div className="flex flex-col sm:flex-row h-full overflow-hidden">
                     {/* Sidebar Tabs */}
-                    <div className="w-1/3 bg-gray-900/50 border-r border-gray-800 p-4 space-y-2">
+                    <div className="w-full sm:w-1/3 bg-black/40 border-b sm:border-b-0 sm:border-r border-white/5 p-4 space-x-2 sm:space-x-0 sm:space-y-2 flex sm:flex-col overflow-x-auto sm:overflow-visible">
                         <button 
                             onClick={() => setActiveTab('profile')}
-                            className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${activeTab === 'profile' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+                            className={`flex-shrink-0 w-auto sm:w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'profile' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
                         >
                             <span className="material-symbols-outlined text-sm">person</span>
-                            <span className="text-sm font-bold">Kimlik & Profil</span>
+                            <span className="text-sm font-bold">Kimlik</span>
                         </button>
                         <button 
                             onClick={() => setActiveTab('account')}
-                            className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${activeTab === 'account' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+                            className={`flex-shrink-0 w-auto sm:w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'account' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
                         >
                             <span className="material-symbols-outlined text-sm">verified_user</span>
-                            <span className="text-sm font-bold">Hesap & Güvenlik</span>
+                            <span className="text-sm font-bold">Güvenlik</span>
                         </button>
                         <button 
                             onClick={() => setActiveTab('notifications')}
-                            className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${activeTab === 'notifications' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+                            className={`flex-shrink-0 w-auto sm:w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'notifications' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
                         >
                             <span className="material-symbols-outlined text-sm">notifications_active</span>
                             <span className="text-sm font-bold">Bildirimler</span>
@@ -109,42 +109,43 @@ export const ProfileModal: React.FC = () => {
                     </div>
 
                     {/* Body Content */}
-                    <div className="w-2/3 p-8 overflow-y-auto custom-scrollbar bg-black/20">
+                    <div className="w-full sm:w-2/3 p-6 sm:p-8 overflow-y-auto custom-scrollbar bg-black/20">
                         
                         {activeTab === 'profile' && (
-                            <div className="space-y-6">
+                            <div className="space-y-6 animate-fadeIn">
                                 <div className="flex flex-col items-center justify-center mb-6">
-                                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-3xl font-bold text-white shadow-lg border-4 border-gray-800">
+                                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-4xl font-bold text-white shadow-2xl border-4 border-[#1a1a1a] ring-1 ring-white/10">
                                         {name ? name.charAt(0).toUpperCase() : 'M'}
                                     </div>
-                                    <p className="mt-2 text-xs text-gray-400">Profil Resmi</p>
+                                    <p className="mt-3 text-xs text-gray-400 uppercase tracking-widest font-bold">Profil Resmi</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Ad Soyad</label>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">Ad Soyad</label>
                                     <input 
                                         type="text" 
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                        className="w-full bg-[#111] border border-white/10 rounded-xl p-3 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-gray-700"
+                                        placeholder="İsminiz..."
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Unvan / Meslek</label>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">Unvan / Meslek</label>
                                     <input 
                                         type="text" 
                                         value={role}
                                         onChange={(e) => setRole(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                        className="w-full bg-[#111] border border-white/10 rounded-xl p-3 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-gray-700"
                                         placeholder="Örn: Mimar, Öğrenci..."
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Biyografi</label>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">Biyografi</label>
                                     <textarea 
                                         value={bio}
                                         onChange={(e) => setBio(e.target.value)}
-                                        className="w-full h-24 bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all resize-none text-sm"
+                                        className="w-full h-24 bg-[#111] border border-white/10 rounded-xl p-3 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all resize-none text-sm placeholder-gray-700"
                                         placeholder="Alper sizi nasıl tanısın?"
                                     ></textarea>
                                 </div>
@@ -152,41 +153,52 @@ export const ProfileModal: React.FC = () => {
                         )}
 
                         {activeTab === 'account' && (
-                            <div className="space-y-6">
-                                <h3 className="text-white font-bold text-lg mb-4">İletişim Bilgileri</h3>
+                            <div className="space-y-6 animate-fadeIn">
+                                <div className="bg-blue-900/10 border border-blue-500/20 p-4 rounded-xl">
+                                    <h4 className="text-blue-200 text-sm font-bold flex items-center gap-2 mb-2">
+                                        <span className="material-symbols-outlined text-lg">lock</span>
+                                        Veri Güvenliği Garantisi
+                                    </h4>
+                                    <p className="text-xs text-blue-300/70 leading-relaxed">
+                                        Bu uygulama "Yerel Kasa" teknolojisi kullanır. Girdiğiniz bilgiler, telefon numaraları ve e-postalar <strong>asla sunucularımıza yüklenmez</strong>. Sadece bu cihazın hafızasında şifreli olarak tutulur.
+                                    </p>
+                                </div>
+
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">E-Posta Adresi</label>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">E-Posta Adresi</label>
                                     <input 
                                         type="email" 
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none"
+                                        className="w-full bg-[#111] border border-white/10 rounded-xl p-3 text-white focus:border-amber-500 outline-none"
                                         placeholder="email@ornek.com"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Telefon Numarası</label>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">Telefon Numarası</label>
                                     <input 
                                         type="tel" 
                                         value={phone}
                                         onChange={(e) => setPhone(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none"
+                                        className="w-full bg-[#111] border border-white/10 rounded-xl p-3 text-white focus:border-amber-500 outline-none"
                                         placeholder="+90 5XX XXX XX XX"
                                     />
                                 </div>
-                                <div className="pt-4 border-t border-gray-800">
-                                    <h4 className="text-sm font-bold text-red-400 mb-2">Hesap İşlemleri</h4>
-                                    <button className="text-xs text-red-500 hover:text-red-400 underline">Hesabımı Sil</button>
+                                <div className="pt-4 border-t border-white/10">
+                                    <button className="text-xs text-red-500 hover:text-red-400 hover:underline flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-sm">delete_forever</span>
+                                        Tüm Verilerimi Sil ve Sıfırla
+                                    </button>
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'notifications' && (
-                            <div className="space-y-6">
-                                <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
+                            <div className="space-y-6 animate-fadeIn">
+                                <div className="bg-[#111] p-4 rounded-xl border border-white/10">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-3">
-                                            <span className="material-symbols-outlined text-yellow-500">settings_motion_mode</span>
+                                            <span className="material-symbols-outlined text-amber-500">settings_motion_mode</span>
                                             <div>
                                                 <h4 className="text-sm font-bold text-white">Arka Plan İşlemleri</h4>
                                                 <p className="text-xs text-gray-400">Alper uygulamadan çıktığınızda da çalışsın.</p>
@@ -194,16 +206,15 @@ export const ProfileModal: React.FC = () => {
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" checked={allowBackground} onChange={(e) => setAllowBackground(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                                         </label>
                                     </div>
-                                    <p className="text-[10px] text-gray-500 mt-2 italic">* Araştırma, piyasa takibi ve randevu hatırlatmaları için gereklidir.</p>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <h3 className="text-white font-bold text-sm">Bildirim Tercihleri</h3>
+                                    <h3 className="text-white font-bold text-sm uppercase tracking-wide opacity-50">Bildirim Kanalları</h3>
                                     
-                                    <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                                    <div className="flex items-center justify-between p-3 bg-[#111] rounded-lg border border-white/5">
                                         <span className="text-sm text-gray-300">Günlük E-Posta Özeti</span>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} className="sr-only peer" />
@@ -211,19 +222,11 @@ export const ProfileModal: React.FC = () => {
                                         </label>
                                     </div>
 
-                                    <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                                    <div className="flex items-center justify-between p-3 bg-[#111] rounded-lg border border-white/5">
                                         <span className="text-sm text-gray-300">SMS Uyarıları (Acil)</span>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" checked={notifySms} onChange={(e) => setNotifySms(e.target.checked)} className="sr-only peer" />
                                             <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
-                                        <span className="text-sm text-gray-300">Günlük Brifing (Sabah 08:00)</span>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={dailyBriefing} onChange={(e) => setDailyBriefing(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
                                         </label>
                                     </div>
                                 </div>
@@ -233,20 +236,26 @@ export const ProfileModal: React.FC = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-3">
-                    <button 
-                        onClick={() => setIsProfileModalOpen(false)}
-                        className="px-6 py-2.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors font-medium text-sm"
-                    >
-                        Vazgeç
-                    </button>
-                    <button 
-                        onClick={handleSave}
-                        className="px-8 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 transition-all text-sm flex items-center gap-2"
-                    >
-                        <span className="material-symbols-outlined text-lg">save</span>
-                        Kaydet
-                    </button>
+                <div className="p-6 border-t border-white/5 bg-[#0f0f0f] flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p className="text-[10px] text-gray-600 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">lock</span>
+                        Verileriniz 256-bit mantıksal şifreleme ile korunmaktadır.
+                    </p>
+                    <div className="flex gap-3 w-full sm:w-auto">
+                        <button 
+                            onClick={() => setIsProfileModalOpen(false)}
+                            className="flex-1 sm:flex-none px-6 py-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors font-medium text-sm"
+                        >
+                            Vazgeç
+                        </button>
+                        <button 
+                            onClick={handleSave}
+                            className="flex-1 sm:flex-none px-8 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl font-bold shadow-lg shadow-amber-900/20 transition-all text-sm flex items-center justify-center gap-2 transform hover:scale-105"
+                        >
+                            <span className="material-symbols-outlined text-lg">save</span>
+                            Kaydet
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

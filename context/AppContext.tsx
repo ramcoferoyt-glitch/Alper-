@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile, SavedSession } from '../types';
 import { useAppStoreComplete } from '../hooks/useAppStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -42,6 +42,8 @@ interface AppUIState {
     setIsProfileModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     // Memory State
     savedSessions: SavedSession[];
+    currentSessionId: string | null;
+    startNewSession: (initialMode?: AppMode) => void;
     deleteSession: (id: string) => void;
     loadSessionToChat: (id: string) => void;
 }
@@ -51,9 +53,9 @@ export type AppContextType = ReturnType<typeof useAppStoreComplete> & AppUIState
 const AppContext = createContext<AppContextType | null>(null);
 
 const DEFAULT_PROFILE: UserProfile = {
-    name: 'Misafir Kullanıcı',
+    name: '',
     email: '',
-    role: 'Yaratıcı',
+    role: '',
     bio: '',
     avatar: '',
     preferences: {
@@ -71,18 +73,16 @@ const DEFAULT_PROFILE: UserProfile = {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const store = useAppStoreComplete();
 
-    // Initialize chat and gallery state if not handled by store directly
+    // Initialize chat and gallery state
     const [mode, setMode] = useState<AppMode>('chat');
     
     // User Profile (Load from LocalStorage)
     const [userProfile, setUserProfile] = useState<UserProfile>(() => {
         const saved = localStorage.getItem('alper_user_profile');
-        // Merge with default to ensure new fields exist
         return saved ? { ...DEFAULT_PROFILE, ...JSON.parse(saved) } : DEFAULT_PROFILE;
     });
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-    // Save profile on change
     useEffect(() => {
         localStorage.setItem('alper_user_profile', JSON.stringify(userProfile));
     }, [userProfile]);
@@ -91,15 +91,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserProfile(prev => ({ ...prev, ...newProfile }));
     };
 
-    const [chatHistory, setChatHistory] = useState<ChatMessage[]>([{
-        id: 'welcome',
-        role: 'model',
-        text: `**Merhaba ${userProfile.name !== 'Misafir Kullanıcı' ? userProfile.name : ''}. Ben Alper.**
-        
-        Zekam ve yaratıcılığım emrine amade.
-        _Bugün birlikte neyi gerçeğe dönüştürüyoruz?_`,
-        timestamp: Date.now()
-    }]);
+    // Chat History & Session Management
+    const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+    const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+
+    // Initial Welcome Message - Premium Edition
+    useEffect(() => {
+        // Only set welcome if absolutely no history and no session loaded
+        if (chatHistory.length === 0 && !currentSessionId) {
+            setChatHistory([{
+                id: 'welcome',
+                role: 'model',
+                text: `**Merhaba. Ben Alper.**
+                
+Sizin için tasarlanmış kişisel yapay zeka süper uygulamasına hoş geldiniz.
+
+YETENEKLERİM:
+• **Yaratıcı:** 4K Görsel, Sinematik Video, Kitap Yazarlığı.
+• **Profesyonel:** Hukuk, Finans, Psikoloji ve İş Danışmanlığı.
+• **Keşif:** Google Haritalar ile mekan rehberliği ve rota planlama.
+• **Canlı:** Sesli ve görüntülü, duygusal zekaya sahip gerçek zamanlı sohbet.
+
+Başlamak için menüden bir mod seçin veya buraya yazın.`,
+                timestamp: Date.now()
+            }]);
+        }
+    }, []);
 
     const [isChatProcessing, setIsChatProcessing] = useState(false);
     const [gallery, setGallery] = useState<GeneratedMedia[]>([]);
@@ -115,64 +132,114 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [livePersona, setLivePersona] = useState<'assistant' | 'psychologist'>('assistant');
     const [psychologistSubMode, setPsychologistSubMode] = useState<PsychologistSubMode>('therapy');
 
-    // Memory State
+    // Memory State (Loaded from LocalStorage)
     const [savedSessions, setSavedSessions] = useState<SavedSession[]>(() => {
-        const saved = localStorage.getItem('alper_chat_memory');
-        return saved ? JSON.parse(saved) : [];
+        try {
+            const saved = localStorage.getItem('alper_chat_memory');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            return [];
+        }
     });
 
+    // Persist Saved Sessions
     useEffect(() => {
         localStorage.setItem('alper_chat_memory', JSON.stringify(savedSessions));
     }, [savedSessions]);
 
-    // Auto-save chat history to memory when leaving a mode or app unmounts
-    // Simplified: Just save significant sessions manually or periodically
-    // For now, we will add a function to explicit save context if needed, 
-    // but we can also treat the "chatHistory" as current session.
-    
-    const saveCurrentSessionToMemory = () => {
-        if (chatHistory.length <= 1) return; // Don't save empty/welcome sessions
-        const lastMsg = chatHistory[chatHistory.length - 1];
-        const preview = lastMsg.text.substring(0, 50) + '...';
-        const newSession: SavedSession = {
-            id: uuidv4(),
-            date: Date.now(),
-            mode: mode,
-            title: `${mode.toUpperCase()} - ${new Date().toLocaleDateString()}`,
-            preview,
-            messages: [...chatHistory]
-        };
-        setSavedSessions(prev => [newSession, ...prev]);
+    // AUTO-SAVE LOGIC
+    useEffect(() => {
+        if (chatHistory.length <= 1) return;
+
+        const timeoutId = setTimeout(() => {
+            const lastMsg = chatHistory[chatHistory.length - 1];
+            if (!lastMsg.text) return;
+
+            const firstUserMsg = chatHistory.find(m => m.role === 'user');
+            let title = firstUserMsg ? firstUserMsg.text.substring(0, 40) : 'Yeni Sohbet';
+            if (title.length >= 40) title += '...';
+
+            const preview = lastMsg.text.substring(0, 60) + '...';
+
+            setSavedSessions(prev => {
+                const existingIndex = prev.findIndex(s => s.id === currentSessionId);
+                
+                if (existingIndex !== -1 && currentSessionId) {
+                    const updatedSessions = [...prev];
+                    updatedSessions[existingIndex] = {
+                        ...updatedSessions[existingIndex],
+                        date: Date.now(),
+                        preview,
+                        messages: chatHistory,
+                        title: prev[existingIndex].title === 'Yeni Sohbet' ? title : prev[existingIndex].title
+                    };
+                    const item = updatedSessions.splice(existingIndex, 1)[0];
+                    updatedSessions.unshift(item);
+                    return updatedSessions;
+                } 
+                
+                if (currentSessionId) {
+                     return [{
+                        id: currentSessionId,
+                        date: Date.now(),
+                        mode: mode,
+                        title,
+                        preview,
+                        messages: chatHistory
+                    }, ...prev];
+                }
+
+                return prev;
+            });
+        }, 1000);
+
+        return () => clearTimeout(timeoutId);
+    }, [chatHistory, currentSessionId, mode]);
+
+    const ensureSessionId = () => {
+        if (!currentSessionId) {
+            const newId = uuidv4();
+            setCurrentSessionId(newId);
+            return newId;
+        }
+        return currentSessionId;
     };
 
-    // Effect: Save session when mode changes (if session has content)
-    useEffect(() => {
-        return () => {
-            // Cleanup/Save on mode switch logic could go here
-            // Implementing a simpler manual approach for stability
-        };
-    }, [mode]);
+    const startNewSession = (initialMode: AppMode = 'chat') => {
+        const newId = uuidv4();
+        setCurrentSessionId(newId);
+        setChatHistory([{
+            id: 'welcome',
+            role: 'model',
+            text: `**Merhaba.** Yeni bir sohbet başlattım. Nasıl yardımcı olabilirim?`,
+            timestamp: Date.now()
+        }]);
+        setMode(initialMode);
+    };
 
     const deleteSession = (id: string) => {
         setSavedSessions(prev => prev.filter(s => s.id !== id));
+        if (currentSessionId === id) {
+            startNewSession();
+        }
     };
 
     const loadSessionToChat = (id: string) => {
         const session = savedSessions.find(s => s.id === id);
         if (session) {
-            setMode(session.mode);
+            setCurrentSessionId(session.id);
             setChatHistory(session.messages);
+            setMode(session.mode); // This will trigger the UI switch in App.tsx
         }
     };
 
     const addChatMessage = (message: ChatMessage) => {
+        ensureSessionId();
         setChatHistory(prev => [...prev, message]);
     };
 
     const clearChat = () => {
-        // Save before clearing?
-        saveCurrentSessionToMemory();
-        setChatHistory([]);
+        startNewSession(mode);
     };
 
     const addToGallery = (media: GeneratedMedia) => {
@@ -207,7 +274,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
-    // Merge the store from useAppStore with the local UI state
     const contextValue: AppContextType = {
         ...store,
         mode,
@@ -238,6 +304,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isProfileModalOpen,
         setIsProfileModalOpen,
         savedSessions,
+        currentSessionId,
+        startNewSession,
         deleteSession,
         loadSessionToChat
     };
