@@ -9,7 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { AppMode } from '../types';
 
 export const NavigationMenu: React.FC = () => {
-    const { mode, setMode, setIsYouTubeModalOpen, setIsProfileModalOpen, userProfile } = useAppContext();
+    const { mode, setMode, setIsYouTubeModalOpen, setIsProfileModalOpen, userProfile, selectedModel, setSelectedModel } = useAppContext();
     const [isOpen, setIsOpen] = useState(false);
 
     const handleModeChange = (newMode: AppMode) => {
@@ -83,7 +83,7 @@ export const NavigationMenu: React.FC = () => {
                                 />
                                 <MenuItem 
                                     icon="smart_toy" 
-                                    label="Alper Ajan" 
+                                    label="Alper Agent" 
                                     desc="Otonom Araştırma & Eğitim"
                                     isActive={mode === 'agent'} 
                                     onClick={() => handleModeChange('agent')} 
@@ -233,8 +233,35 @@ export const NavigationMenu: React.FC = () => {
                             </div>
                         </div>
                         
-                        {/* Footer Branding */}
-                        <div className="p-6 text-center border-t border-gray-900">
+                        {/* Footer Branding & Model Selector */}
+                        <div className="p-6 text-center border-t border-gray-900 space-y-4">
+                            
+                            {/* Model Selector */}
+                            <div className="bg-gray-800/50 rounded-xl p-1 flex items-center gap-1 border border-gray-700">
+                                <button 
+                                    onClick={() => setSelectedModel('x3')}
+                                    className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                        selectedModel === 'x3' 
+                                        ? 'bg-blue-600 text-white shadow' 
+                                        : 'text-gray-400 hover:bg-white/5'
+                                    }`}
+                                    aria-label="Hızlı Modu Seç"
+                                >
+                                    <span className="material-symbols-outlined text-sm">bolt</span> Alper X3 (Hızlı)
+                                </button>
+                                <button 
+                                    onClick={() => setSelectedModel('x5')}
+                                    className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                        selectedModel === 'x5' 
+                                        ? 'bg-purple-600 text-white shadow' 
+                                        : 'text-gray-400 hover:bg-white/5'
+                                    }`}
+                                    aria-label="Düşünen Modu Seç"
+                                >
+                                    <span className="material-symbols-outlined text-sm">psychology</span> Alper X5 (Pro)
+                                </button>
+                            </div>
+
                             <p className="text-[10px] text-gray-600 font-medium tracking-widest">POWERED BY ALPER AI</p>
                         </div>
                     </div>

@@ -5,13 +5,17 @@
 */
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile, SavedSession } from '../types';
+import { AppMode, ChatMessage, GeneratedMedia, NotebookSource, NotebookEntry, PsychologistSubMode, UserProfile, SavedSession, AIModel, KnowledgeItem } from '../types';
 import { useAppStoreComplete } from '../hooks/useAppStore';
 import { v4 as uuidv4 } from 'uuid';
+import { dbService } from '../services/DatabaseService';
+import { analyzeAndLearn } from '../services/GeminiService';
 
 interface AppUIState {
     mode: AppMode;
     setMode: React.Dispatch<React.SetStateAction<AppMode>>;
+    selectedModel: AIModel;
+    setSelectedModel: React.Dispatch<React.SetStateAction<AIModel>>;
     chatHistory: ChatMessage[];
     addChatMessage: (message: ChatMessage) => void;
     clearChat: () => void;
@@ -46,6 +50,7 @@ interface AppUIState {
     startNewSession: (initialMode?: AppMode) => void;
     deleteSession: (id: string) => void;
     loadSessionToChat: (id: string) => void;
+    learnedKnowledge: KnowledgeItem[];
 }
 
 export type AppContextType = ReturnType<typeof useAppStoreComplete> & AppUIState;
@@ -75,8 +80,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Initialize chat and gallery state
     const [mode, setMode] = useState<AppMode>('chat');
+    const [selectedModel, setSelectedModel] = useState<AIModel>('x5'); // Default to Thinking/Pro
     
-    // User Profile (Load from LocalStorage)
+    // User Profile (Load from LocalStorage - kept simple for now)
     const [userProfile, setUserProfile] = useState<UserProfile>(() => {
         const saved = localStorage.getItem('alper_user_profile');
         return saved ? { ...DEFAULT_PROFILE, ...JSON.parse(saved) } : DEFAULT_PROFILE;
@@ -94,10 +100,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Chat History & Session Management
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+    const [learnedKnowledge, setLearnedKnowledge] = useState<KnowledgeItem[]>([]);
 
-    // Initial Welcome Message - Premium Edition
+    // Load Knowledge on Mount
     useEffect(() => {
-        // Only set welcome if absolutely no history and no session loaded
+        dbService.getKnowledge().then(k => setLearnedKnowledge(k)).catch(e => console.error(e));
+        // Load sessions from DB
+        dbService.getSessions().then(s => setSavedSessions(s)).catch(e => console.error(e));
+    }, []);
+
+    // Initial Welcome Message
+    useEffect(() => {
         if (chatHistory.length === 0 && !currentSessionId) {
             setChatHistory([{
                 id: 'welcome',
@@ -132,26 +145,14 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
     const [livePersona, setLivePersona] = useState<'assistant' | 'psychologist'>('assistant');
     const [psychologistSubMode, setPsychologistSubMode] = useState<PsychologistSubMode>('therapy');
 
-    // Memory State (Loaded from LocalStorage)
-    const [savedSessions, setSavedSessions] = useState<SavedSession[]>(() => {
-        try {
-            const saved = localStorage.getItem('alper_chat_memory');
-            return saved ? JSON.parse(saved) : [];
-        } catch (e) {
-            return [];
-        }
-    });
+    // Memory State (Synced with IndexedDB)
+    const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
 
-    // Persist Saved Sessions
+    // AUTO-SAVE & SELF-LEARNING LOGIC
     useEffect(() => {
-        localStorage.setItem('alper_chat_memory', JSON.stringify(savedSessions));
-    }, [savedSessions]);
+        if (chatHistory.length <= 1 || !currentSessionId) return;
 
-    // AUTO-SAVE LOGIC
-    useEffect(() => {
-        if (chatHistory.length <= 1) return;
-
-        const timeoutId = setTimeout(() => {
+        const timeoutId = setTimeout(async () => {
             const lastMsg = chatHistory[chatHistory.length - 1];
             if (!lastMsg.text) return;
 
@@ -161,37 +162,42 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
 
             const preview = lastMsg.text.substring(0, 60) + '...';
 
+            const updatedSession: SavedSession = {
+                id: currentSessionId,
+                date: Date.now(),
+                mode: mode,
+                title,
+                preview,
+                messages: chatHistory
+            };
+
+            // Save to DB
+            await dbService.saveSession(updatedSession);
+            
+            // Update UI State
             setSavedSessions(prev => {
                 const existingIndex = prev.findIndex(s => s.id === currentSessionId);
-                
-                if (existingIndex !== -1 && currentSessionId) {
-                    const updatedSessions = [...prev];
-                    updatedSessions[existingIndex] = {
-                        ...updatedSessions[existingIndex],
-                        date: Date.now(),
-                        preview,
-                        messages: chatHistory,
-                        title: prev[existingIndex].title === 'Yeni Sohbet' ? title : prev[existingIndex].title
-                    };
-                    const item = updatedSessions.splice(existingIndex, 1)[0];
-                    updatedSessions.unshift(item);
-                    return updatedSessions;
-                } 
-                
-                if (currentSessionId) {
-                     return [{
-                        id: currentSessionId,
-                        date: Date.now(),
-                        mode: mode,
-                        title,
-                        preview,
-                        messages: chatHistory
-                    }, ...prev];
+                if (existingIndex !== -1) {
+                    const updated = [...prev];
+                    updated[existingIndex] = updatedSession;
+                    return [updated[existingIndex], ...updated.filter((_, i) => i !== existingIndex)];
                 }
-
-                return prev;
+                return [updatedSession, ...prev];
             });
-        }, 1000);
+
+            // Trigger Self-Learning (Background) - Every 4th message pair
+            if (chatHistory.length % 4 === 0) {
+                const newFacts = await analyzeAndLearn(chatHistory.map(m => ({role: m.role, text: m.text})));
+                if (newFacts.length > 0) {
+                    for (const fact of newFacts) {
+                        await dbService.addKnowledge(fact);
+                    }
+                    const updatedKnowledge = await dbService.getKnowledge();
+                    setLearnedKnowledge(updatedKnowledge);
+                }
+            }
+
+        }, 1500);
 
         return () => clearTimeout(timeoutId);
     }, [chatHistory, currentSessionId, mode]);
@@ -217,7 +223,8 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         setMode(initialMode);
     };
 
-    const deleteSession = (id: string) => {
+    const deleteSession = async (id: string) => {
+        await dbService.deleteSession(id);
         setSavedSessions(prev => prev.filter(s => s.id !== id));
         if (currentSessionId === id) {
             startNewSession();
@@ -229,7 +236,7 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         if (session) {
             setCurrentSessionId(session.id);
             setChatHistory(session.messages);
-            setMode(session.mode); // This will trigger the UI switch in App.tsx
+            setMode(session.mode);
         }
     };
 
@@ -278,6 +285,8 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         ...store,
         mode,
         setMode,
+        selectedModel,
+        setSelectedModel,
         chatHistory,
         addChatMessage,
         clearChat,
@@ -307,7 +316,8 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         currentSessionId,
         startNewSession,
         deleteSession,
-        loadSessionToChat
+        loadSessionToChat,
+        learnedKnowledge
     };
 
     return (

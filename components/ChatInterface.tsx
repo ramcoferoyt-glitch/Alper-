@@ -213,7 +213,7 @@ const MessageActionMenu: React.FC<{ text: string }> = ({ text }) => {
 };
 
 export const ChatInterface: React.FC = () => {
-    const { chatHistory, addChatMessage, isChatProcessing, setIsChatProcessing, userLocation, mode, isYouTubeModalOpen, setIsYouTubeModalOpen, setMode, psychologistSubMode, userProfile } = useAppContext();
+    const { chatHistory, addChatMessage, isChatProcessing, setIsChatProcessing, userLocation, mode, isYouTubeModalOpen, setIsYouTubeModalOpen, setMode, psychologistSubMode, userProfile, selectedModel, setSelectedModel } = useAppContext();
     const [input, setInput] = useState('');
     const [useSearch, setUseSearch] = useState(false);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -278,7 +278,7 @@ export const ChatInterface: React.FC = () => {
         let finalLocation = locationData || userLocation;
 
         try {
-            const stream = await streamChat(apiHistory, textToSend, currentAttachments, searchActive, mapsActive, finalLocation, mode, psychologistSubMode, userProfile);
+            const stream = await streamChat(apiHistory, textToSend, currentAttachments, searchActive, mapsActive, finalLocation, mode, psychologistSubMode, userProfile, selectedModel);
             let fullText = '';
             for await (const chunk of stream) {
                 if (chunk.text) fullText += chunk.text;
@@ -367,7 +367,7 @@ export const ChatInterface: React.FC = () => {
         <div className="flex flex-col h-full bg-transparent relative font-sans">
             {/* Header / Title Area */}
             <div className="absolute top-0 left-0 p-6 z-20 pointer-events-none flex items-center justify-between w-full pr-24">
-                <div className="pointer-events-auto">
+                <div className="pointer-events-auto flex items-center gap-3">
                     <h2 className="text-xl font-bold text-white flex items-center gap-3 drop-shadow-md tracking-tight">
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
                             {mode === 'notebook' ? 'Notebook' : 
@@ -377,10 +377,24 @@ export const ChatInterface: React.FC = () => {
                              mode === 'finance' ? 'Alper Finans' : 
                              mode === 'personal_coach' ? 'Alper Koç' :
                              mode === 'lawyer' ? 'Alper Hukuk' :
-                             mode === 'agent' ? 'Alper Ajan' :
+                             mode === 'agent' ? 'Alper Agent' :
                              'Alper AI'}
                         </span>
                     </h2>
+                    
+                    {/* Model Indicator - Quick Toggle */}
+                    <button 
+                        onClick={() => setSelectedModel(selectedModel === 'x5' ? 'x3' : 'x5')}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-md border flex items-center gap-1 transition-all ${
+                            selectedModel === 'x3' 
+                            ? 'bg-blue-600/80 border-blue-500 text-white' 
+                            : 'bg-purple-600/80 border-purple-500 text-white'
+                        }`}
+                        title={selectedModel === 'x3' ? "Hızlı Mod Aktif" : "Düşünen Mod Aktif"}
+                    >
+                        <span className="material-symbols-outlined text-[12px]">{selectedModel === 'x3' ? 'bolt' : 'psychology'}</span>
+                        {selectedModel === 'x3' ? 'X3 HIZLI' : 'X5 PRO'}
+                    </button>
                 </div>
             </div>
 

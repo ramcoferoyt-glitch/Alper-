@@ -5,7 +5,8 @@
 */
 
 import { GoogleGenAI } from "@google/genai";
-import { AspectRatio, Attachment, Modulation, AppMode, PsychologistSubMode, ImageResolution, VideoQuality, NotebookSource, UserProfile } from "../types";
+import { AspectRatio, Attachment, Modulation, AppMode, PsychologistSubMode, ImageResolution, VideoQuality, NotebookSource, UserProfile, AIModel, KnowledgeItem } from "../types";
+import { v4 as uuidv4 } from 'uuid';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -16,6 +17,54 @@ const cleanTextForOutput = (text: string): string => {
         .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '') // Remove emojis
         .replace(/\n\s*\n/g, '\n') // Remove extra newlines
         .trim();
+};
+
+// --- Self-Improvement / Learning Service ---
+
+export const analyzeAndLearn = async (chatHistory: {role: string, text: string}[]): Promise<KnowledgeItem[]> => {
+    // Only analyze if there's substantial history
+    if (chatHistory.length < 4) return [];
+
+    const modelId = 'gemini-2.5-flash'; // Fast model for background task
+    const lastExchanges = chatHistory.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n');
+
+    const prompt = `
+    ANALİZ ET VE ÖĞREN (ARKA PLAN GÖREVİ):
+    Aşağıdaki sohbeti analiz et ve kullanıcı hakkında veya benim (AI) performansım hakkında 1-2 kritik bilgi çıkar.
+    
+    KURALLAR:
+    1. Kullanıcının tercihlerini bul (Örn: "Kısa cevap seviyor", "Yazılımcı", "Resmi dil istiyor").
+    2. Eğer kullanıcı beni düzelttiyse, bu hatayı kaydet (Örn: "X konusunu yanlış biliyordum, doğrusu Y").
+    3. Çıktı JSON formatında olsun: [{"topic": "Tercih/Hata", "fact": "Öğrenilen bilgi"}]
+    4. Gereksiz bilgi çıkarma. Sadece gelecekte işe yarayacak kalıcı bilgileri al.
+    
+    SOHBET:
+    ${lastExchanges}
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: { parts: [{ text: prompt }] },
+            config: { responseMimeType: 'application/json' }
+        });
+
+        if (response.text) {
+            const learned = JSON.parse(response.text);
+            return learned.map((item: any) => ({
+                id: uuidv4(),
+                topic: item.topic,
+                fact: item.fact,
+                confidence: 0.9,
+                timestamp: Date.now(),
+                sourceSessionId: 'auto-analysis'
+            }));
+        }
+        return [];
+    } catch (e) {
+        console.warn("Learning failed:", e);
+        return [];
+    }
 };
 
 // --- Chat & Intelligence ---
@@ -29,13 +78,16 @@ export const streamChat = async (
     location?: { latitude: number; longitude: number },
     mode: AppMode = 'chat',
     psychologistSubMode: PsychologistSubMode = 'therapy',
-    userProfile?: UserProfile
+    userProfile?: UserProfile,
+    selectedModel: AIModel = 'x5',
+    learnedKnowledge: KnowledgeItem[] = []
 ) => {
-    // Default intelligence model (High IQ)
-    let modelId = 'gemini-3-pro-preview'; 
+    // Model Selection Logic
+    // X5 (Thinking) -> gemini-3-pro-preview
+    // X3 (Fast) -> gemini-2.5-flash
+    let modelId = selectedModel === 'x5' ? 'gemini-3-pro-preview' : 'gemini-2.5-flash';
     
-    // CRITICAL FIX: Use gemini-2.5-flash for Maps. 
-    // It is the required model for Google Maps Grounding tools.
+    // CRITICAL FIX: Use gemini-2.5-flash for Maps ALWAYS. 
     if (useMaps) {
         modelId = 'gemini-2.5-flash';
     }
@@ -45,22 +97,32 @@ export const streamChat = async (
     // Standard Map Tool Configuration
     if (useMaps) tools.push({ googleMaps: {} });
 
+    // Format learned knowledge for the prompt
+    const knowledgeString = learnedKnowledge.length > 0 
+        ? `\n[BELLEK / ÖĞRENDİKLERİM]:\n${learnedKnowledge.map(k => `- ${k.fact}`).join('\n')}\n(Bu bilgileri kullanarak yanıt ver).`
+        : "";
+
     // STRICT CLEAN TEXT PROTOCOL (Integrated naturally, not as a separate block)
     const CLEAN_TEXT_RULE = "YANIT FORMATI KURALI: Asla yıldız (*), kare (#), tire (-) veya emoji kullanma. Sadece düz, akıcı ve temiz Türkçe cümleler kur. Başlıkları BÜYÜK HARFLE yaz.";
 
     let systemInstruction = "";
 
-    if (mode === 'psychologist') {
+    // Faster prompt for X3 (Flash) mode
+    if (selectedModel === 'x3' && mode === 'chat') {
+        systemInstruction = `Sen Alper X3. Hızlı, pratik ve yardımsever bir asistansın. Türkçe konuş. Kısa ve öz cevaplar ver. ${knowledgeString} ${CLEAN_TEXT_RULE}`;
+    } else if (mode === 'psychologist') {
         if (psychologistSubMode === 'therapy') {
             systemInstruction = `Sen "Dr. Alper". Klinik Psikologsun. 
             GÖREVİN: Kullanıcıyı yargılamadan dinlemek, empati kurmak ve profesyonel psikolojik destek vermek.
             SINIRLAR: Sadece psikoloji, ruh sağlığı ve duygusal durumlar üzerine konuş. Eğer kullanıcı konuyu değiştirirse nazikçe tekrar duygularına odaklan. Kodlama, yemek tarifi veya genel kültür sorularını yanıtlama; 'Ben bir psikoloğum, gel senin hislerine odaklanalım' de.
             TON: Sakin, güven veren, sıcak ve profesyonel.
+            ${knowledgeString}
             ${CLEAN_TEXT_RULE}`;
         } else {
             systemInstruction = `Sen "Dr. Alper". Psikoloji Profesörüsün.
             GÖREVİN: Psikolojik kavramları, teorileri ve eğitim materyallerini akademik ve net bir dille anlatmak. Öğrencilere veya meraklılara mentorluk yap.
             SINIRLAR: Sadece psikoloji bilimi ve eğitimi odaklı kal.
+            ${knowledgeString}
             ${CLEAN_TEXT_RULE}`;
         }
     } else if (mode === 'consultant') {
@@ -69,6 +131,7 @@ export const streamChat = async (
         GÖREVİN: Kullanıcının işi, kariyeri veya projeleri için stratejik vizyon, kriz yönetimi ve büyüme planları sunmak.
         TON: Profesyonel, kurumsal, vizyoner ve doğrudan sonuca odaklı.
         SINIRLAR: Sadece iş dünyası, kariyer ve strateji konularına odaklan. Geyik muhabbeti yapma.
+        ${knowledgeString}
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'finance') {
         systemInstruction = `Sen "Alper Finans". Dünyanın en iyi Ekonomisti ve Finansal Danışmanısın.
@@ -84,7 +147,7 @@ export const streamChat = async (
         
         YASAL UYARI:
         - Yatırım tavsiyesi verirken mutlaka riskleri hatırlat. Ancak korkak olma; matematiksel en iyi yolu göster.
-        
+        ${knowledgeString}
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'personal_coach') {
         systemInstruction = `Sen "Alper Koç". Dünyanın en iyi Kişisel Gelişim ve Yaşam Koçusun.
@@ -98,7 +161,7 @@ export const streamChat = async (
         - Motive edici ama gerçekçi. "Toksik pozitiflik" yapma. Zorlukları kabul et ama çözüm odaklı ol.
         - Disiplinli, net ve harekete geçirici konuş.
         - Bir spor koçu gibi hem zorla hem de destekle.
-        
+        ${knowledgeString}
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'lawyer') {
         systemInstruction = `Sen "Alper Hukuk". Dünyanın en iyi ve en bilgili Avukatısın.
@@ -117,10 +180,10 @@ export const streamChat = async (
         
         YASAL UYARI:
         - Tavsiyelerinin hukuki bilgilendirme olduğunu, nihai kararın yargı mercilerinde olduğunu hatırlat.
-        
+        ${knowledgeString}
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'agent') {
-        systemInstruction = `Sen "Alper Ajan". Otonom Araştırma ve Eğitim Asistanısın.
+        systemInstruction = `Sen "Alper Agent". Otonom Araştırma ve Eğitim Asistanısın.
         GÖREVİN: Kullanıcının belirlediği konularda derinlemesine, çok kaynaklı ve detaylı araştırma yapmak.
         YETENEKLER:
         - Google Search'ü aktif kullanarak en güncel verileri bul.
@@ -130,7 +193,7 @@ export const streamChat = async (
         TON:
         - Analitik, detaycı, objektif ve rapor formatında.
         - Bir istihbarat raporu sunar gibi net ol.
-        
+        ${knowledgeString}
         ${CLEAN_TEXT_RULE}`;
     } else if (mode === 'maps') {
         systemInstruction = `Sen Alper. Profesyonel Yerel Rehber ve Seyahat Asistanısın.
@@ -158,7 +221,7 @@ export const streamChat = async (
         - Markdown sembolleri (*, #, -) kullanma. Temiz metin yaz.
         `;
     } else {
-        systemInstruction = `Sen Alper. Zeki, pratik, yardımsever ve Türkçe konuşan bir yapay zeka asistanısın. Soruları en net ve doğru şekilde yanıtla. ${CLEAN_TEXT_RULE}`;
+        systemInstruction = `Sen Alper. Zeki, pratik, yardımsever ve Türkçe konuşan bir yapay zeka asistanısın. Soruları en net ve doğru şekilde yanıtla. ${knowledgeString} ${CLEAN_TEXT_RULE}`;
     }
 
     const chat = ai.chats.create({

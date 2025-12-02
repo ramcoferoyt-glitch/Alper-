@@ -6,6 +6,7 @@
 
 export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer' | 'agent' | 'memory';
 export type PsychologistSubMode = 'therapy' | 'academic';
+export type AIModel = 'x3' | 'x5'; // x3 = fast, x5 = thinking/pro
 
 export interface UserProfile {
     name: string;
@@ -22,16 +23,27 @@ export interface UserProfile {
             sms: boolean;
             push: boolean;
         };
-        theme: 'dark' | 'light'; // For future use
+        theme: 'dark' | 'light';
     };
+    // Local learned facts cache
+    learnedFacts?: string[]; 
+}
+
+export interface KnowledgeItem {
+    id: string;
+    topic: string; // e.g., "User Preference", "Correction", "Personal Detail"
+    fact: string;
+    confidence: number;
+    timestamp: number;
+    sourceSessionId: string;
 }
 
 export interface SavedSession {
     id: string;
     date: number;
     mode: AppMode;
-    title: string; // Auto-generated summary title
-    preview: string; // First few words
+    title: string; 
+    preview: string; 
     messages: ChatMessage[];
 }
 
@@ -62,19 +74,19 @@ export interface GeneratedMedia {
 export interface NotebookSource {
     id: string;
     title: string;
-    content: string; // Text content or Base64 data for files
+    content: string; 
     type: 'text' | 'file' | 'youtube';
-    mimeType?: string; // For files (application/pdf, text/plain)
-    url?: string; // For YouTube
+    mimeType?: string; 
+    url?: string; 
 }
 
 export interface NotebookEntry {
     id: string;
     type: 'podcast' | 'video_summary' | 'mind_map' | 'reports' | 'flashcards' | 'quiz' | 'infographic' | 'slides';
     title: string;
-    content: string; // Podcast script or video URL or Mind map markdown
+    content: string; 
     isLoading?: boolean;
-    customInstruction?: string; // Track user customization
+    customInstruction?: string; 
 }
 
 export interface SocialFormat {
@@ -86,8 +98,8 @@ export interface SocialFormat {
 }
 
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
-export type ImageResolution = 'standard' | 'hd' | 'ultra'; // standard=flash, hd=2k(pro), ultra=4k(pro)
-export type VideoQuality = 'fast' | 'quality'; // fast=veo-fast, quality=veo-full
+export type ImageResolution = 'standard' | 'hd' | 'ultra'; 
+export type VideoQuality = 'fast' | 'quality'; 
 
 export const SOCIAL_FORMATS: { [key: string]: SocialFormat } = {
     YOUTUBE: { label: 'Yatay (Video)', platform: 'YouTube', value: '16:9', icon: 'smart_display', description: 'Video (1920x1080)' },
@@ -102,8 +114,6 @@ export enum AiStage {
     MODIFYING_CODE = 3,
     ENABLE_CAMERA_CONTROLS = 4
 }
-
-// ... (Rest of existing types remain unchanged for Shader/Game logic) ...
 
 export interface Slider {
     variableName: string;
@@ -202,7 +212,7 @@ export interface SoundConfig {
         gain: number;
         bpm: number;
         filter: number;
-        // ... (diğer alanlar aynen kalır)
+        // ...
     };
     modulations?: Modulation[];
 }

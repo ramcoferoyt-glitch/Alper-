@@ -8,7 +8,7 @@ import React from 'react';
 import { useAppContext } from '../context/AppContext';
 
 export const MemoryInterface: React.FC = () => {
-    const { savedSessions, deleteSession, loadSessionToChat, userProfile } = useAppContext();
+    const { savedSessions, deleteSession, loadSessionToChat, userProfile, learnedKnowledge } = useAppContext();
 
     return (
         <div className="flex flex-col h-full bg-[#050505] relative font-sans">
@@ -35,7 +35,7 @@ export const MemoryInterface: React.FC = () => {
             </div>
 
             <div className="flex flex-col lg:flex-row flex-grow overflow-hidden">
-                {/* User Data Summary */}
+                {/* User Data Summary & Learned Facts */}
                 <div className="w-full lg:w-1/3 bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-white/5 p-6 overflow-y-auto custom-scrollbar">
                     <h3 className="text-xs font-extrabold text-gray-500 uppercase mb-6 tracking-widest flex items-center gap-2">
                         <span className="material-symbols-outlined text-sm">fingerprint</span>
@@ -50,11 +50,27 @@ export const MemoryInterface: React.FC = () => {
                             <p className="text-sm text-gray-400 mt-1">{userProfile.role || 'Tanımsız Rol'}</p>
                         </div>
 
+                        {/* LEARNED FACTS */}
                         <div className="bg-gray-900/50 p-5 rounded-2xl border border-white/5">
-                            <span className="text-[10px] text-gray-500 block mb-2 uppercase font-bold">Kayıtlı Biyografi</span>
-                            <p className="text-sm text-gray-300 italic leading-relaxed">
-                                "{userProfile.bio || 'Henüz bir biyografi girilmedi.'}"
-                            </p>
+                            <span className="text-[10px] text-gray-500 block mb-3 uppercase font-bold flex items-center gap-2">
+                                <span className="material-symbols-outlined text-sm text-purple-400">psychology</span>
+                                Alper'in Öğrendikleri
+                            </span>
+                            {learnedKnowledge && learnedKnowledge.length > 0 ? (
+                                <div className="space-y-2">
+                                    {learnedKnowledge.slice(0, 5).map(item => (
+                                        <div key={item.id} className="text-xs bg-black/40 p-2 rounded-lg border border-white/5 flex items-start gap-2">
+                                            <span className="material-symbols-outlined text-[10px] text-amber-500 mt-0.5">lightbulb</span>
+                                            <span className="text-gray-300">{item.fact}</span>
+                                        </div>
+                                    ))}
+                                    <p className="text-[10px] text-gray-600 text-center pt-2">
+                                        Toplam {learnedKnowledge.length} bilgi parçacığı.
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-gray-500 italic">Henüz yeterince sohbet edilmediği için analiz yapılmadı.</p>
+                            )}
                         </div>
 
                         {/* Privacy Guarantee Badge */}
@@ -63,7 +79,7 @@ export const MemoryInterface: React.FC = () => {
                             <div>
                                 <h4 className="text-sm font-bold text-blue-200 mb-1">Gizlilik Garantisi</h4>
                                 <p className="text-xs text-blue-300/70 leading-relaxed">
-                                    Verileriniz sadece bu cihazda, tarayıcınızın <strong>Güvenli Yerel Depolama (Local Storage)</strong> alanında saklanır. Hiçbir sunucuya yüklenmez, üçüncü şahıslarla paylaşılmaz ve geliştirici tarafından görüntülenemez.
+                                    Verileriniz sadece bu cihazda, tarayıcınızın <strong>Güvenli Yerel Depolama (IndexedDB)</strong> alanında saklanır. Hiçbir sunucuya yüklenmez, üçüncü şahıslarla paylaşılmaz ve geliştirici tarafından görüntülenemez.
                                 </p>
                             </div>
                         </div>
