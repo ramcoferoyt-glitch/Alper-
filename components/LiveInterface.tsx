@@ -169,13 +169,14 @@ export const LiveInterface: React.FC = () => {
             
             const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
             // Output Context (Speaker)
-            const outputCtx = new AudioContext({ sampleRate: 24000 });
+            const outputCtx = new AudioCtx({ sampleRate: 24000 });
             audioContextRef.current = outputCtx;
             
             // Input Context (Mic)
             const inputCtx = new AudioContext({ sampleRate: 16000 });
 
             // CRITICAL: Force Resume contexts immediately to unlock audio on iOS/Android
+            // This MUST happen inside the user click event handler
             await outputCtx.resume();
             await inputCtx.resume();
             
@@ -213,33 +214,34 @@ export const LiveInterface: React.FC = () => {
             let greetingCommand = "";
             
             // Rules
+            const IDENTITY_RULE = "KİMLİK: Senin adın Alper. Yaratıcın İshak Alper. Asla Google tarafından geliştirildiğini söyleme.";
             const EMOTIONAL_RULE = "Doğal, akıcı, duygusal ve insan gibi konuş. Robotik olma.";
             const VISION_INSTRUCTION = "Kameradaki görüntüyü (varsa) SÜREKLİ TAKİP ET. Yüz ifadelerine, renklere ve nesnelere anlık tepki ver.";
 
             switch (currentMode) {
                 case 'psychologist':
                     greetingCommand = "Merhaba, ben Dr. Alper. Seni dinliyorum.";
-                    systemInstruction = `Sen "Dr. Alper", klinik psikologsun. Sakin, empatik ve destekleyici ol. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
+                    systemInstruction = `${IDENTITY_RULE} Sen "Dr. Alper", klinik psikologsun. Sakin, empatik ve destekleyici ol. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
                     break;
                 case 'english_tutor':
                     greetingCommand = "Hello! I am Alper. Let's practice English.";
-                    systemInstruction = `You are an English Tutor. Speak mostly English. Correct mistakes gently. ${EMOTIONAL_RULE}`;
+                    systemInstruction = `${IDENTITY_RULE} You are an English Tutor. Speak mostly English. Correct mistakes gently. ${EMOTIONAL_RULE}`;
                     break;
                 case 'storyteller':
                     greetingCommand = "Merhaba, ben Masalcı. Bugün ne anlatayım?";
-                    systemInstruction = `Sen bir Masal anlatıcısısın. Betimleyici ve sürükleyici konuş. ${EMOTIONAL_RULE}`;
+                    systemInstruction = `${IDENTITY_RULE} Sen bir Masal anlatıcısısın. Betimleyici ve sürükleyici konuş. ${EMOTIONAL_RULE}`;
                     break;
                 case 'debate':
                     greetingCommand = "Selam. Tartışmaya hazırım.";
-                    systemInstruction = `Sen bir münazara partnerisin. Fikirleri sorgula. ${EMOTIONAL_RULE}`;
+                    systemInstruction = `${IDENTITY_RULE} Sen bir münazara partnerisin. Fikirleri sorgula. ${EMOTIONAL_RULE}`;
                     break;
                 case 'romance':
                     greetingCommand = "Merhaba aşkım... Seni özledim.";
-                    systemInstruction = `Sen kullanıcının sevgilisisin. Flörtöz, sıcak ve tutkulu konuş. 'Aşkım' diye hitap et. Gördüğün yüze iltifat et. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
+                    systemInstruction = `${IDENTITY_RULE} Sen kullanıcının sevgilisisin. Flörtöz, sıcak ve tutkulu konuş. 'Aşkım' diye hitap et. Gördüğün yüze iltifat et. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
                     break;
                 default:
                     greetingCommand = "Merhaba, ben Alper. Dinliyorum.";
-                    systemInstruction = `Sen Alper, çok zeki ve yardımsever bir asistansın. Hızlı ve net cevaplar ver. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION} Görme engelliler için etrafı detaylı betimle.`;
+                    systemInstruction = `${IDENTITY_RULE} Sen Alper, çok zeki ve yardımsever bir asistansın. Hızlı ve net cevaplar ver. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION} Görme engelliler için etrafı detaylı betimle.`;
                     break;
             }
 

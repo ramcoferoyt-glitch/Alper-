@@ -53,9 +53,12 @@ class NotificationService {
     }
 
     sendEmail(to: string, subject: string, body: string) {
-        // Create a hidden link and click it to trigger mail client
-        // This is the most reliable way to open email clients on mobile and web
-        const mailtoLink = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        // Safe encoding for URL parameters
+        // Note: Browsers and email clients have URL length limits (often 2000 chars).
+        // Truncate body if excessive to prevent link failure.
+        const safeBody = body.length > 1500 ? body.substring(0, 1500) + "\n\n[Raporun devamı uzunluk sınırı nedeniyle kesildi.]" : body;
+        
+        const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(safeBody)}`;
         
         const link = document.createElement('a');
         link.href = mailtoLink;
