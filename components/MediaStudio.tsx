@@ -245,14 +245,14 @@ export const MediaStudio: React.FC<{ type: 'image' | 'video' }> = ({ type }) => 
                                     onClick={() => setVideoQuality('fast')}
                                     className={`px-3 py-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${videoQuality === 'fast' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400'}`}
                                 >
-                                    <span className="material-symbols-outlined text-sm">speed</span>
+                                    <span className="material-symbols-outlined text-sm" aria-hidden="true">speed</span>
                                     Hızlı (Önizleme)
                                 </button>
                                 <button 
                                     onClick={() => setVideoQuality('quality')}
                                     className={`px-3 py-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${videoQuality === 'quality' ? 'bg-amber-600 border-amber-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400'}`}
                                 >
-                                    <span className="material-symbols-outlined text-sm">movie_filter</span>
+                                    <span className="material-symbols-outlined text-sm" aria-hidden="true">movie_filter</span>
                                     Sinematik (Premium)
                                 </button>
                             </div>
@@ -291,7 +291,7 @@ export const MediaStudio: React.FC<{ type: 'image' | 'video' }> = ({ type }) => 
                         <div className="col-span-full flex flex-col items-center justify-center h-96 text-gray-600 border-2 border-dashed border-gray-800 rounded-3xl bg-gray-900/20">
                             <span className="material-symbols-outlined text-7xl mb-4 opacity-20" aria-hidden="true">{type === 'image' ? 'image' : 'videocam'}</span>
                             <p className="text-lg font-medium">Henüz bir çalışma yok.</p>
-                            <p className="text-sm opacity-60">Soldaki panelden oluşturmaya başla.</p>
+                            <p className="text-sm opacity-60">Soldan bir panelden oluşturmaya başla.</p>
                         </div>
                     )}
                     

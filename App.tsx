@@ -20,6 +20,7 @@ import { PersonalCoachInterface } from './components/PersonalCoachInterface';
 import { LawyerInterface } from './components/LawyerInterface';
 import { AgentInterface } from './components/AgentInterface';
 import { MemoryInterface } from './components/MemoryInterface';
+import { DownloaderInterface } from './components/DownloaderInterface';
 import { ProfileModal } from './components/ProfileModal';
 
 const MainContent: React.FC = () => {
@@ -28,6 +29,10 @@ const MainContent: React.FC = () => {
     return (
         <div className="flex-grow h-full overflow-hidden relative">
             {mode === 'chat' && <ChatInterface />}
+            {mode === 'social_content' && <ChatInterface />}
+            {mode === 'learning' && <ChatInterface />}
+            {mode === 'daily_life' && <ChatInterface />}
+            
             {mode === 'notebook' && <NotebookInterface />}
             {mode === 'maps' && <ChatInterface />}
             {mode === 'psychologist' && <PsychologistInterface />}
@@ -37,9 +42,13 @@ const MainContent: React.FC = () => {
             {mode === 'lawyer' && <LawyerInterface />}
             {mode === 'agent' && <AgentInterface />}
             {mode === 'memory' && <MemoryInterface />}
+            
             {mode === 'image' && <MediaStudio type="image" />}
             {mode === 'video' && <MediaStudio type="video" />}
             {mode === 'thumbnail' && <YouTubeStudio />}
+            
+            {mode === 'downloader' && <DownloaderInterface />}
+            
             {mode === 'live' && <LiveInterface />}
             {mode === 'editor' && <EditorInterface />}
             

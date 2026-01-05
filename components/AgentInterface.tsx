@@ -249,7 +249,7 @@ export const AgentInterface: React.FC = () => {
                                         ) : (
                                             <>
                                                 <span className="material-symbols-outlined text-sm">play_arrow</span>
-                                                Görevi Başlat
+                                                Çalıştır
                                             </>
                                         )}
                                     </button>

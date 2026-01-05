@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -16,6 +15,8 @@ interface AppUIState {
     setMode: React.Dispatch<React.SetStateAction<AppMode>>;
     selectedModel: AIModel;
     setSelectedModel: React.Dispatch<React.SetStateAction<AIModel>>;
+    isPrivateMode: boolean;
+    setIsPrivateMode: React.Dispatch<React.SetStateAction<boolean>>;
     chatHistory: ChatMessage[];
     addChatMessage: (message: ChatMessage) => void;
     clearChat: () => void;
@@ -75,14 +76,15 @@ const DEFAULT_PROFILE: UserProfile = {
     }
 };
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ children: React.Node }> = ({ children }) => {
     const store = useAppStoreComplete();
 
     // Initialize chat and gallery state
     const [mode, setMode] = useState<AppMode>('chat');
-    const [selectedModel, setSelectedModel] = useState<AIModel>('x5'); // Default to Thinking/Pro
+    const [selectedModel, setSelectedModel] = useState<AIModel>('x5'); 
+    const [isPrivateMode, setIsPrivateMode] = useState(false);
     
-    // User Profile (Load from LocalStorage - kept simple for now)
+    // User Profile
     const [userProfile, setUserProfile] = useState<UserProfile>(() => {
         const saved = localStorage.getItem('alper_user_profile');
         return saved ? { ...DEFAULT_PROFILE, ...JSON.parse(saved) } : DEFAULT_PROFILE;
@@ -105,30 +107,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Load Knowledge on Mount
     useEffect(() => {
         dbService.getKnowledge().then(k => setLearnedKnowledge(k)).catch(e => console.error(e));
-        // Load sessions from DB
         dbService.getSessions().then(s => setSavedSessions(s)).catch(e => console.error(e));
-    }, []);
-
-    // Initial Welcome Message
-    useEffect(() => {
-        if (chatHistory.length === 0 && !currentSessionId) {
-            setChatHistory([{
-                id: 'welcome',
-                role: 'model',
-                text: `**Merhaba. Ben Alper.**
-                
-Sizin için tasarlanmış kişisel yapay zeka süper uygulamasına hoş geldiniz.
-
-YETENEKLERİM:
-• **Yaratıcı:** 4K Görsel, Sinematik Video, Kitap Yazarlığı.
-• **Profesyonel:** Hukuk, Finans, Psikoloji ve İş Danışmanlığı.
-• **Keşif:** Google Haritalar ile mekan rehberliği ve rota planlama.
-• **Canlı:** Sesli ve görüntülü, duygusal zekaya sahip gerçek zamanlı sohbet.
-
-Başlamak için menüden bir mod seçin veya buraya yazın.`,
-                timestamp: Date.now()
-            }]);
-        }
     }, []);
 
     const [isChatProcessing, setIsChatProcessing] = useState(false);
@@ -145,12 +124,12 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
     const [livePersona, setLivePersona] = useState<'assistant' | 'psychologist'>('assistant');
     const [psychologistSubMode, setPsychologistSubMode] = useState<PsychologistSubMode>('therapy');
 
-    // Memory State (Synced with IndexedDB)
+    // Memory State
     const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
 
-    // AUTO-SAVE & SELF-LEARNING LOGIC
+    // AUTO-SAVE & SELF-LEARNING LOGIC (Skipped in Private Mode)
     useEffect(() => {
-        if (chatHistory.length <= 1 || !currentSessionId) return;
+        if (chatHistory.length <= 1 || !currentSessionId || isPrivateMode) return;
 
         const timeoutId = setTimeout(async () => {
             const lastMsg = chatHistory[chatHistory.length - 1];
@@ -171,10 +150,8 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
                 messages: chatHistory
             };
 
-            // Save to DB
             await dbService.saveSession(updatedSession);
             
-            // Update UI State
             setSavedSessions(prev => {
                 const existingIndex = prev.findIndex(s => s.id === currentSessionId);
                 if (existingIndex !== -1) {
@@ -185,7 +162,7 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
                 return [updatedSession, ...prev];
             });
 
-            // Trigger Self-Learning (Background) - Every 4th message pair
+            // Self-Learning
             if (chatHistory.length % 4 === 0) {
                 const newFacts = await analyzeAndLearn(chatHistory.map(m => ({role: m.role, text: m.text})));
                 if (newFacts.length > 0) {
@@ -200,7 +177,7 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         }, 1500);
 
         return () => clearTimeout(timeoutId);
-    }, [chatHistory, currentSessionId, mode]);
+    }, [chatHistory, currentSessionId, mode, isPrivateMode]);
 
     const ensureSessionId = () => {
         if (!currentSessionId) {
@@ -214,12 +191,7 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
     const startNewSession = (initialMode: AppMode = 'chat') => {
         const newId = uuidv4();
         setCurrentSessionId(newId);
-        setChatHistory([{
-            id: 'welcome',
-            role: 'model',
-            text: `**Merhaba.** Yeni bir sohbet başlattım. Nasıl yardımcı olabilirim?`,
-            timestamp: Date.now()
-        }]);
+        setChatHistory([]);
         setMode(initialMode);
     };
 
@@ -287,6 +259,8 @@ Başlamak için menüden bir mod seçin veya buraya yazın.`,
         setMode,
         selectedModel,
         setSelectedModel,
+        isPrivateMode,
+        setIsPrivateMode,
         chatHistory,
         addChatMessage,
         clearChat,

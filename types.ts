@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer' | 'agent' | 'memory';
+export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer' | 'agent' | 'memory' | 'downloader' | 'social_content' | 'learning' | 'daily_life';
 export type PsychologistSubMode = 'therapy' | 'academic';
 export type AIModel = 'x3' | 'x5'; // x3 = fast, x5 = thinking/pro
 
@@ -107,39 +107,33 @@ export const SOCIAL_FORMATS: { [key: string]: SocialFormat } = {
     INSTAGRAM: { label: 'Kare (Gönderi)', platform: 'Instagram', value: '1:1', icon: 'photo_camera', description: 'Gönderi (1080x1080)' },
 };
 
+// --- Shader Pilot Types ---
+
 export enum AiStage {
-    IDLE = 0,
-    ADJUSTING_SLIDERS = 1,
-    SMART_SLIDER_CREATION = 2,
-    MODIFYING_CODE = 3,
-    ENABLE_CAMERA_CONTROLS = 4
+    IDLE = 'IDLE',
+    ADJUSTING_SLIDERS = 'ADJUSTING_SLIDERS',
+    SMART_SLIDER_CREATION = 'SMART_SLIDER_CREATION',
+    MODIFYING_CODE = 'MODIFYING_CODE',
+    ENABLE_CAMERA_CONTROLS = 'ENABLE_CAMERA_CONTROLS'
 }
 
 export interface Slider {
-    variableName: string;
     name: string;
-    description: string;
+    variableName: string;
     defaultValue: number;
     min: number;
     max: number;
     step: number;
+    description: string;
 }
 
-export interface SliderSuggestion {
-    suggestion: string;
-    type: 'safe' | 'experimental';
+export interface CameraData {
+    position: [number, number, number];
+    rotation: [number, number];
+    roll: number;
 }
 
-export interface TerraformTarget {
-    variableName: string;
-    type: 'velocity';
-    magnitude: number;
-    probability?: number;
-}
-
-export interface TerraformConfig {
-    targets: TerraformTarget[];
-}
+export type ViewMode = 'cockpit' | 'chase';
 
 export interface ControlConfig {
     invertForward?: boolean;
@@ -152,6 +146,17 @@ export interface ControlConfig {
     ascendVelocity?: number;
     pitchVelocity?: number;
     yawVelocity?: number;
+}
+
+export interface TerraformTarget {
+    variableName: string;
+    type: 'velocity';
+    magnitude: number;
+    probability?: number;
+}
+
+export interface TerraformConfig {
+    targets: TerraformTarget[];
 }
 
 export type ModulationSource = 'speed' | 'acceleration' | 'altitude' | 'descent' | 'turning' | 'turningSigned' | 'heading' | 'pitch' | 'proximity' | 'time';
@@ -191,13 +196,13 @@ export interface SoundConfig {
     atmosphere: {
         enabled: boolean;
         gain: number;
-        texture: string;
+        texture?: string;
     };
     melody: {
         enabled: boolean;
         gain: number;
         density: number;
-        scale: "dorian" | "phrygian" | "lydian";
+        scale: string;
     };
     arp: {
         enabled: boolean;
@@ -205,38 +210,27 @@ export interface SoundConfig {
         speed: number;
         octaves: number;
         filter: number;
-        direction?: 'up' | 'down' | 'updown' | 'random';
+        direction?: string;
     };
     rhythm: {
         enabled: boolean;
         gain: number;
         bpm: number;
         filter: number;
-        // ...
     };
     modulations?: Modulation[];
 }
 
-export interface CameraData {
-    position: number[];
-    rotation: number[];
-    roll: number;
-}
-
-export type ViewMode = 'cockpit' | 'chase';
-
 export type ShipModulationTarget = 
-    'complexity' |
-    'fold1' | 'fold1AsymX' |
-    'fold2' | 'fold2AsymX' |
-    'fold3' |
-    'scale' | 'scaleAsymX' |
-    'stretch' |
-    'taper' |
-    'twist' | 'twistAsymX' |
-    'asymmetryX' |
-    'asymmetryY' |
-    'asymmetryZ';
+    'complexity' | 
+    'fold1' | 'fold1AsymX' | 
+    'fold2' | 'fold2AsymX' | 
+    'fold3' | 
+    'scale' | 'scaleAsymX' | 
+    'stretch' | 
+    'taper' | 
+    'twist' | 'twistAsymX' | 
+    'asymmetryX' | 'asymmetryY' | 'asymmetryZ';
 
 export interface ShipModulation {
     id: string;
@@ -262,10 +256,10 @@ export interface ShipConfig {
     scaleAsymX: number;
     fold1AsymX: number;
     fold2AsymX: number;
-    chaseDistance: number;
-    chaseVerticalOffset: number;
-    pitchOffset: number;
-    generalScale: number;
-    translucency: number;
+    chaseDistance?: number;
+    chaseVerticalOffset?: number;
+    pitchOffset?: number;
+    generalScale?: number;
+    translucency?: number;
     modulations?: ShipModulation[];
 }

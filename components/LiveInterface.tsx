@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -49,10 +48,11 @@ export const LiveInterface: React.FC = () => {
     const [currentMode, setCurrentMode] = useState<LiveMode>('default');
     const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
 
-    const [status, setStatus] = useState("Bağlanmaya Hazır");
+    const [status, setStatus] = useState("Hazır");
     
     // Refs for audio handling
-    const audioContextRef = useRef<AudioContext | null>(null);
+    const outputAudioCtxRef = useRef<AudioContext | null>(null);
+    const inputAudioCtxRef = useRef<AudioContext | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -78,9 +78,9 @@ export const LiveInterface: React.FC = () => {
         activeSourcesRef.current = [];
         setIsSpeaking(false);
         
-        if (audioContextRef.current) {
+        if (outputAudioCtxRef.current) {
             // Reset timing to "now" so new audio plays immediately
-            nextStartTimeRef.current = audioContextRef.current.currentTime + 0.05;
+            nextStartTimeRef.current = outputAudioCtxRef.current.currentTime + 0.05;
         }
     };
 
@@ -106,12 +106,15 @@ export const LiveInterface: React.FC = () => {
 
         stopAudioPlayback();
         
-        // Don't close AudioContext if we plan to reuse it immediately, 
-        // but for full cleanup, close it.
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-            audioContextRef.current.close().catch(() => {});
+        if (outputAudioCtxRef.current && outputAudioCtxRef.current.state !== 'closed') {
+            outputAudioCtxRef.current.close().catch(() => {});
         }
-        audioContextRef.current = null;
+        if (inputAudioCtxRef.current && inputAudioCtxRef.current.state !== 'closed') {
+            inputAudioCtxRef.current.close().catch(() => {});
+        }
+        
+        outputAudioCtxRef.current = null;
+        inputAudioCtxRef.current = null;
 
         setIsConnected(false);
         setIsCameraOn(false);
@@ -137,23 +140,22 @@ export const LiveInterface: React.FC = () => {
     };
 
     const toggleCameraFacing = async () => {
-        const newMode = facingMode === 'user' ? 'environment' : 'user';
-        setFacingMode(newMode);
+        const newFacing = facingMode === 'user' ? 'environment' : 'user';
+        setFacingMode(newFacing);
         if (isConnected && streamRef.current) {
             const videoTrack = streamRef.current.getVideoTracks()[0];
             if (videoTrack) {
                 videoTrack.stop();
                 streamRef.current.removeTrack(videoTrack);
                 try {
-                    const newStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: newMode } });
+                    const newStream = await navigator.mediaDevices.getUserMedia({ video: { width: {ideal: 320}, height: {ideal: 240}, facingMode: newFacing } });
                     const newTrack = newStream.getVideoTracks()[0];
                     streamRef.current.addTrack(newTrack);
                     if (videoRef.current) {
                         videoRef.current.srcObject = streamRef.current;
-                        // Force play on track switch
                         videoRef.current.play().catch(e => console.log("Video play error", e));
                     }
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Camera switch error", e); }
             }
         }
     };
@@ -161,88 +163,75 @@ export const LiveInterface: React.FC = () => {
     const handleConnect = async () => {
         if (connectingRef.current) return;
         connectingRef.current = true;
-        cleanup(); // Ensure everything is clean
+        
+        // Safety: ensure any previous session is closed
+        if (isConnected) cleanup();
 
         try {
-            setStatus("Bağlanıyor...");
+            setStatus("İzinler Alınıyor...");
             const live = getLiveClient();
             
             const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-            // Output Context (Speaker)
-            const outputCtx = new AudioCtx({ sampleRate: 24000 });
-            audioContextRef.current = outputCtx;
             
-            // Input Context (Mic)
-            const inputCtx = new AudioContext({ sampleRate: 16000 });
+            // iPhone requires AudioContext to be created/resumed within a user gesture.
+            const outputCtx = new AudioCtx({ sampleRate: 24000 });
+            outputAudioCtxRef.current = outputCtx;
+            
+            const inputCtx = new AudioCtx({ sampleRate: 16000 });
+            inputAudioCtxRef.current = inputCtx;
 
-            // CRITICAL: Force Resume contexts immediately to unlock audio on iOS/Android
-            // This MUST happen inside the user click event handler
+            // iOS Fix: Resume contexts immediately
             await outputCtx.resume();
             await inputCtx.resume();
             
             nextStartTimeRef.current = outputCtx.currentTime + 0.1; 
             
-            // Get Media Stream (Lower resolution for mobile stability)
-            const stream = await navigator.mediaDevices.getUserMedia({ 
+            // Mobile Optimization: Use lower resolution and specific constraints
+            const constraints = {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
                     sampleRate: 16000,
-                    channelCount: 1
-                }, 
-                video: { width: 240, height: 180, facingMode: facingMode } // Lower res for mobile bandwidth
-            });
+                },
+                video: isCameraOn ? {
+                    width: { ideal: 240 },
+                    height: { ideal: 180 },
+                    facingMode: facingMode
+                } : false
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             streamRef.current = stream;
             
-            // Setup Video Element
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                videoRef.current.onloadedmetadata = () => {
-                    videoRef.current?.play().catch(e => console.warn("Video play fail", e));
-                };
+                // iOS Fix: muted and playsinline are required for autoplay
+                videoRef.current.muted = true;
+                videoRef.current.setAttribute('playsinline', 'true');
+                videoRef.current.play().catch(e => console.warn("Video play fail", e));
             }
 
             const source = inputCtx.createMediaStreamSource(stream);
-            // 4096 is safer for stability, though slightly higher latency
+            // ScriptProcessor is deprecated but standard for simple Live API integration in a single file
             const processor = inputCtx.createScriptProcessor(4096, 1, 1);
             sourceRef.current = source;
             processorRef.current = processor;
 
-            // --- Configuration Logic ---
-            let systemInstruction = "";
-            let greetingCommand = "";
-            
-            // Rules
+            // Configuration
             const IDENTITY_RULE = "KİMLİK: Senin adın Alper. Yaratıcın İshak Alper. Asla Google tarafından geliştirildiğini söyleme.";
             const EMOTIONAL_RULE = "Doğal, akıcı, duygusal ve insan gibi konuş. Robotik olma.";
-            const VISION_INSTRUCTION = "Kameradaki görüntüyü (varsa) SÜREKLİ TAKİP ET. Yüz ifadelerine, renklere ve nesnelere anlık tepki ver.";
+            const VISION_INSTRUCTION = "Kameradaki görüntüyü (varsa) SÜREKLİ TAKİP ET. Yüz ifadelerine, nesnelere anlık tepki ver.";
 
-            switch (currentMode) {
-                case 'psychologist':
-                    greetingCommand = "Merhaba, ben Dr. Alper. Seni dinliyorum.";
-                    systemInstruction = `${IDENTITY_RULE} Sen "Dr. Alper", klinik psikologsun. Sakin, empatik ve destekleyici ol. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
-                    break;
-                case 'english_tutor':
-                    greetingCommand = "Hello! I am Alper. Let's practice English.";
-                    systemInstruction = `${IDENTITY_RULE} You are an English Tutor. Speak mostly English. Correct mistakes gently. ${EMOTIONAL_RULE}`;
-                    break;
-                case 'storyteller':
-                    greetingCommand = "Merhaba, ben Masalcı. Bugün ne anlatayım?";
-                    systemInstruction = `${IDENTITY_RULE} Sen bir Masal anlatıcısısın. Betimleyici ve sürükleyici konuş. ${EMOTIONAL_RULE}`;
-                    break;
-                case 'debate':
-                    greetingCommand = "Selam. Tartışmaya hazırım.";
-                    systemInstruction = `${IDENTITY_RULE} Sen bir münazara partnerisin. Fikirleri sorgula. ${EMOTIONAL_RULE}`;
-                    break;
-                case 'romance':
-                    greetingCommand = "Merhaba aşkım... Seni özledim.";
-                    systemInstruction = `${IDENTITY_RULE} Sen kullanıcının sevgilisisin. Flörtöz, sıcak ve tutkulu konuş. 'Aşkım' diye hitap et. Gördüğün yüze iltifat et. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
-                    break;
-                default:
-                    greetingCommand = "Merhaba, ben Alper. Dinliyorum.";
-                    systemInstruction = `${IDENTITY_RULE} Sen Alper, çok zeki ve yardımsever bir asistansın. Hızlı ve net cevaplar ver. ${EMOTIONAL_RULE} ${VISION_INSTRUCTION} Görme engelliler için etrafı detaylı betimle.`;
-                    break;
+            let systemInstruction = `${IDENTITY_RULE} ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
+            let greeting = "Merhaba, ben Alper. Dinliyorum.";
+
+            if (currentMode === 'psychologist') {
+                greeting = "Merhaba, ben Dr. Alper. Seni dinliyorum.";
+                systemInstruction = `${IDENTITY_RULE} Sen Dr. Alper, klinik psikologsun. Sakin ve empatik ol. ${EMOTIONAL_RULE}`;
+            } else if (currentMode === 'romance') {
+                greeting = "Selam aşkım... Seni gördüğüme çok sevindim.";
+                systemInstruction = `${IDENTITY_RULE} Sen kullanıcının sevgilisisin. Çok sıcak, flörtöz ve tutkulu konuş. ${EMOTIONAL_RULE}`;
             }
 
             const sessionPromise = live.connect({
@@ -256,9 +245,8 @@ export const LiveInterface: React.FC = () => {
                         source.connect(processor);
                         processor.connect(inputCtx.destination);
                         
-                        // Force Greeting
                         sessionPromise.then(s => s.sendRealtimeInput({ 
-                            content: [{ text: `SİSTEM: Kullanıcı bağlandı. Görüntü geliyorsa yorumla. Hemen şu cümleyi sesli söyle: "${greetingCommand}"` }] 
+                            content: [{ text: `SİSTEM: Kullanıcı bağlandı. Hemen sesli olarak şunu söyle: "${greeting}"` }] 
                         }));
 
                         processor.onaudioprocess = (e) => {
@@ -268,26 +256,22 @@ export const LiveInterface: React.FC = () => {
                             sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob }));
                         };
 
-                        // Start Smart Video Loop
-                        sendVideoFrame();
+                        if (isCameraOn) sendVideoFrame();
                     },
                     onmessage: async (msg: LiveServerMessage) => {
-                        // Handle Audio Output
                         const audioData = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
                         if (audioData) {
                             setIsSpeaking(true);
                             
-                            // Decode Base64
                             const binaryString = atob(audioData);
-                            const len = binaryString.length;
-                            const bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
                             
                             const int16 = new Int16Array(bytes.buffer);
                             const float32 = new Float32Array(int16.length);
                             for(let i=0; i<int16.length; i++) float32[i] = int16[i] / 32768.0;
 
-                            // Ensure audio context is running (fixes "no sound" bug on some browsers)
+                            // Re-ensure output context is alive (iOS sleep issues)
                             if (outputCtx.state === 'suspended') await outputCtx.resume();
 
                             const buffer = outputCtx.createBuffer(1, float32.length, 24000);
@@ -297,7 +281,6 @@ export const LiveInterface: React.FC = () => {
                             src.buffer = buffer;
                             src.connect(outputCtx.destination);
                             
-                            // Smart Scheduling: Play ASAP if drifted, otherwise schedule smoothly
                             const now = outputCtx.currentTime;
                             const startTime = Math.max(nextStartTimeRef.current, now);
                             
@@ -308,7 +291,7 @@ export const LiveInterface: React.FC = () => {
                             src.onended = () => {
                                 activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== src);
                                 if (activeSourcesRef.current.length === 0) {
-                                    setTimeout(() => setIsSpeaking(false), 200); 
+                                    setIsSpeaking(false);
                                 }
                             };
                         }
@@ -319,8 +302,8 @@ export const LiveInterface: React.FC = () => {
                     },
                     onclose: () => cleanup(),
                     onerror: (e) => {
-                        console.error(e);
-                        setStatus("Bağlantı Hatası. Tekrar dene.");
+                        console.error("Live API Error:", e);
+                        setStatus("Hata: " + (e as any).message);
                         cleanup();
                     }
                 },
@@ -335,44 +318,34 @@ export const LiveInterface: React.FC = () => {
             
             sessionPromiseRef.current = sessionPromise;
 
-        } catch (e) {
-            console.error(e);
-            setStatus("Bağlantı Kurulamadı");
+        } catch (e: any) {
+            console.error("Connection Error:", e);
+            setStatus("Cihaz Hatası: " + (e.message || "Bilinmiyor"));
             cleanup();
         }
     };
 
-    // Robust Video Loop (Request-Response style to prevent clogging)
     const sendVideoFrame = () => {
-        if (!sessionPromiseRef.current || !isCameraOn) {
-            // Check again in 500ms
-            videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 500);
+        if (!sessionPromiseRef.current || !isCameraOn || !isConnected) {
+            videoLoopTimeoutRef.current = window.setTimeout(sendVideoFrame, 500);
             return;
         }
 
         const videoEl = videoRef.current;
         const canvasEl = canvasRef.current;
 
-        if (!videoEl || !canvasEl || videoEl.readyState < 2) { // 2 = HAVE_CURRENT_DATA
-             videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 200);
-             return;
-        }
-
-        if (isSendingFrameRef.current) {
-             // Busy sending, skip frame to avoid latency buildup
-             videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 100);
+        if (!videoEl || !canvasEl || videoEl.readyState < 2 || isSendingFrameRef.current) {
+             videoLoopTimeoutRef.current = window.setTimeout(sendVideoFrame, 200);
              return;
         }
 
         const ctx = canvasEl.getContext('2d');
         if (ctx) {
             isSendingFrameRef.current = true;
-            // Capture small frame for speed (240x180 is enough for mood/presence on mobile)
             canvasEl.width = 240;
             canvasEl.height = 180;
             ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
             
-            // Lower quality JPEG for speed
             const base64 = canvasEl.toDataURL('image/jpeg', 0.4).split(',')[1];
             
             sessionPromiseRef.current.then(session => {
@@ -383,27 +356,35 @@ export const LiveInterface: React.FC = () => {
                 console.warn("Frame drop", e);
             }).finally(() => {
                 isSendingFrameRef.current = false;
-                // Schedule next frame (~3 FPS)
-                videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 300);
+                videoLoopTimeoutRef.current = window.setTimeout(sendVideoFrame, 400); // ~2.5 FPS for stability
             });
-        } else {
-             videoLoopTimeoutRef.current = setTimeout(sendVideoFrame, 250);
         }
     };
 
-    // Effect to trigger video loop when camera toggles
-    useEffect(() => {
-        if (isConnected && isCameraOn) {
-            sendVideoFrame();
-        }
-    }, [isCameraOn, isConnected]);
-
-    const handleModeSwitch = (mode: LiveMode) => {
-        setCurrentMode(mode);
-        setIsModeMenuOpen(false);
-        if (isConnected) {
-            cleanup();
-            setStatus("Mod Değişti. Bağlan'a basın.");
+    const handleCameraToggle = async () => {
+        if (!isCameraOn && isConnected) {
+             // Requesting camera while connected
+             try {
+                const vidStream = await navigator.mediaDevices.getUserMedia({ video: { width: {ideal: 240}, height: {ideal: 180}, facingMode: facingMode } });
+                const track = vidStream.getVideoTracks()[0];
+                streamRef.current?.addTrack(track);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = streamRef.current;
+                    videoRef.current.play().catch(() => {});
+                }
+                setIsCameraOn(true);
+             } catch (e) {
+                alert("Kamera başlatılamadı. İzinleri kontrol edin.");
+             }
+        } else if (isCameraOn && streamRef.current) {
+             const track = streamRef.current.getVideoTracks()[0];
+             if (track) {
+                 track.stop();
+                 streamRef.current.removeTrack(track);
+             }
+             setIsCameraOn(false);
+        } else {
+             setIsCameraOn(!isCameraOn);
         }
     };
 
@@ -418,7 +399,7 @@ export const LiveInterface: React.FC = () => {
             <div className="absolute top-4 left-4 z-50 flex gap-4">
                 <button 
                     onClick={handleBack}
-                    className="p-3 bg-gray-800/50 hover:bg-gray-700 rounded-full backdrop-blur-md text-white border border-gray-700 transition-all shadow-lg"
+                    className="p-3 bg-gray-800/50 hover:bg-gray-700 rounded-full backdrop-blur-md text-white border border-gray-700 transition-all shadow-lg outline-none focus:ring-2 focus:ring-white"
                     title="Çıkış"
                     aria-label="Sohbetten Çık"
                 >
@@ -426,29 +407,19 @@ export const LiveInterface: React.FC = () => {
                 </button>
             </div>
 
-            {/* Mode Selector (Top Right) */}
+            {/* Mode Selector */}
             <div className="absolute top-4 right-4 z-50">
                 <button 
                     onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
-                    className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 backdrop-blur-md border border-gray-700 rounded-full text-xs sm:text-sm font-bold hover:bg-gray-700 transition-all shadow-lg"
-                    aria-haspopup="true"
-                    aria-expanded={isModeMenuOpen}
-                    aria-label="Mod Seçimi Menüsü"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 backdrop-blur-md border border-gray-700 rounded-full text-xs sm:text-sm font-bold hover:bg-gray-700 transition-all shadow-lg outline-none focus:ring-2 focus:ring-white"
+                    aria-label="Kişilik ve mod seçimi menüsü"
                 >
                     <span className="material-symbols-outlined text-base" aria-hidden="true">
                         {currentMode === 'psychologist' ? 'self_improvement' : 
-                         currentMode === 'english_tutor' ? 'school' : 
-                         currentMode === 'storyteller' ? 'auto_stories' :
-                         currentMode === 'debate' ? 'gavel' :
-                         currentMode === 'brainstorm' ? 'lightbulb' : 
                          currentMode === 'romance' ? 'favorite' : 'smart_toy'}
                     </span>
                     <span className="hidden sm:inline">
                         {currentMode === 'psychologist' ? 'Psikolog' : 
-                         currentMode === 'english_tutor' ? 'English' : 
-                         currentMode === 'storyteller' ? 'Masalcı' :
-                         currentMode === 'debate' ? 'Münazara' :
-                         currentMode === 'brainstorm' ? 'Fikirler' : 
                          currentMode === 'romance' ? 'Sevgilim' : 'Asistan'}
                     </span>
                     <span className="material-symbols-outlined text-sm" aria-hidden="true">expand_more</span>
@@ -456,26 +427,14 @@ export const LiveInterface: React.FC = () => {
                 
                 {isModeMenuOpen && (
                     <div className="absolute top-full right-0 mt-2 w-56 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fadeIn z-50" role="menu">
-                        <button onClick={() => handleModeSwitch('default')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
+                        <button onClick={() => { setCurrentMode('default'); setIsModeMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 flex items-center gap-3 border-b border-gray-800" role="menuitem">
                             <span className="material-symbols-outlined text-blue-400" aria-hidden="true">smart_toy</span> Asistan (Hızlı)
                         </button>
-                        <button onClick={() => handleModeSwitch('romance')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
+                        <button onClick={() => { setCurrentMode('romance'); setIsModeMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 flex items-center gap-3 border-b border-gray-800" role="menuitem">
                             <span className="material-symbols-outlined text-pink-500" aria-hidden="true">favorite</span> Sevgilim
                         </button>
-                        <button onClick={() => handleModeSwitch('psychologist')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
+                        <button onClick={() => { setCurrentMode('psychologist'); setIsModeMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 flex items-center gap-3" role="menuitem">
                             <span className="material-symbols-outlined text-teal-400" aria-hidden="true">self_improvement</span> Dr. Alper (Psikolog)
-                        </button>
-                        <button onClick={() => handleModeSwitch('english_tutor')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
-                            <span className="material-symbols-outlined text-purple-400" aria-hidden="true">school</span> İngilizce Öğretmeni
-                        </button>
-                        <button onClick={() => handleModeSwitch('storyteller')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
-                            <span className="material-symbols-outlined text-amber-400" aria-hidden="true">auto_stories</span> Masalcı
-                        </button>
-                        <button onClick={() => handleModeSwitch('debate')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 border-b border-gray-800" role="menuitem">
-                            <span className="material-symbols-outlined text-red-400" aria-hidden="true">gavel</span> Münazara Arkadaşı
-                        </button>
-                        <button onClick={() => handleModeSwitch('brainstorm')} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3" role="menuitem">
-                            <span className="material-symbols-outlined text-yellow-400" aria-hidden="true">lightbulb</span> Beyin Fırtınası
                         </button>
                     </div>
                 )}
@@ -483,18 +442,10 @@ export const LiveInterface: React.FC = () => {
 
             <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
             
-            {/* Background Glow */}
-            <div className={`absolute inset-0 bg-gradient-to-br transition-opacity duration-1000 pointer-events-none ${
-                currentMode === 'psychologist' ? 'from-teal-900/40 via-gray-900 to-emerald-900/40' : 
-                currentMode === 'storyteller' ? 'from-indigo-900/40 via-gray-900 to-amber-900/20' :
-                currentMode === 'romance' ? 'from-pink-900/40 via-gray-900 to-rose-900/20' :
-                'from-blue-900/30 via-black to-purple-900/30'
-            } ${isConnected ? 'opacity-100' : 'opacity-40'}`} aria-hidden="true"></div>
-            
-            {/* Main Visual Content */}
+            {/* Visualizer Area */}
             <div className="relative z-10 flex flex-col items-center justify-center flex-grow w-full max-w-lg mt-12 mb-4">
                 
-                {/* Camera Feed */}
+                {/* Camera Feed with iOS fixes */}
                 <div className={`relative w-full aspect-[3/4] md:aspect-square bg-black rounded-3xl overflow-hidden border border-gray-800 shadow-2xl transition-all duration-500 ${isCameraOn ? 'opacity-100 scale-100' : 'opacity-0 scale-95 h-0 absolute'}`}>
                     <video 
                         ref={videoRef}
@@ -511,16 +462,15 @@ export const LiveInterface: React.FC = () => {
                     {isCameraOn && (
                          <button 
                             onClick={toggleCameraFacing}
-                            className="absolute bottom-4 right-4 bg-black/60 backdrop-blur p-3 rounded-full text-white hover:bg-black/80 z-20 border border-white/20 transition-transform active:scale-90"
+                            className="absolute bottom-4 right-4 bg-black/60 backdrop-blur p-3 rounded-full text-white hover:bg-black/80 z-20 border border-white/20 transition-transform active:scale-90 outline-none focus:ring-2 focus:ring-white"
                             aria-label="Kamerayı Çevir"
-                            title="Kamerayı Çevir"
                         >
                             <span className="material-symbols-outlined" aria-hidden="true">flip_camera_ios</span>
                         </button>
                     )}
                 </div>
 
-                {/* Audio Visualizer (When Camera Off) */}
+                {/* Audio Visualizer */}
                 {(!isCameraOn) && (
                     <div className="flex flex-col items-center gap-8 py-10">
                         <div className={`w-48 h-48 md:w-64 md:h-64 rounded-full flex items-center justify-center transition-all duration-700
@@ -531,7 +481,7 @@ export const LiveInterface: React.FC = () => {
                                 : 'bg-gray-900 border border-gray-800'}
                         `}>
                             <div className={`w-32 h-32 md:w-48 md:h-48 rounded-full flex items-center justify-center transition-all duration-100 ${isConnected && isSpeaking ? 'scale-110' : 'scale-100'} ${isConnected ? (currentMode === 'psychologist' ? 'bg-teal-500/20' : currentMode === 'romance' ? 'bg-pink-500/20' : 'bg-indigo-500/20') : 'bg-gray-800'}`}>
-                                 <span className={`material-symbols-outlined text-6xl md:text-8xl transition-colors duration-500 ${isConnected ? (currentMode === 'psychologist' ? 'text-teal-400' : currentMode === 'romance' ? 'text-pink-400' : 'text-indigo-400') : 'text-gray-600'}`} aria-hidden="true">
+                                 <span className={`material-symbols-outlined text-6xl md:text-8xl transition-colors duration-500 ${isConnected ? (currentMode === 'romance' ? 'favorite' : 'graphic_eq') : 'mic_off'}`} aria-hidden="true">
                                     {isConnected ? (currentMode === 'romance' ? 'favorite' : 'graphic_eq') : 'mic_off'}
                                 </span>
                             </div>
@@ -539,7 +489,7 @@ export const LiveInterface: React.FC = () => {
                         
                         <div className="text-center space-y-2">
                             <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white">{isConnected ? (isSpeaking ? (currentMode === 'romance' ? 'Dinliyorum Aşkım...' : 'Dinliyor...') : 'Bağlı') : 'Bekleniyor'}</h2>
-                            <p className="text-sm md:text-base text-gray-400 font-medium">{status}</p>
+                            <p className="text-sm md:text-base text-gray-400 font-medium" aria-live="polite">{status}</p>
                         </div>
                     </div>
                 )}
@@ -550,8 +500,8 @@ export const LiveInterface: React.FC = () => {
                 {!isConnected ? (
                     <div className="flex flex-col gap-4">
                         <div className="flex justify-center gap-4 mb-4" role="group" aria-label="Ses Seçimi">
-                            <button onClick={() => setSelectedVoice('Kore')} className={`px-4 py-2 rounded-full text-sm font-bold border ${selectedVoice === 'Kore' ? 'bg-pink-600 border-pink-500' : 'border-gray-700 text-gray-400'}`} aria-pressed={selectedVoice === 'Kore'}>Kadın Sesi</button>
-                            <button onClick={() => setSelectedVoice('Fenrir')} className={`px-4 py-2 rounded-full text-sm font-bold border ${selectedVoice === 'Fenrir' ? 'bg-blue-600 border-blue-500' : 'border-gray-700 text-gray-400'}`} aria-pressed={selectedVoice === 'Fenrir'}>Erkek Sesi</button>
+                            <button onClick={() => setSelectedVoice('Kore')} className={`px-4 py-2 rounded-full text-sm font-bold border transition-all ${selectedVoice === 'Kore' ? 'bg-pink-600 border-pink-500' : 'border-gray-700 text-gray-400'}`}>Kadın Sesi</button>
+                            <button onClick={() => setSelectedVoice('Fenrir')} className={`px-4 py-2 rounded-full text-sm font-bold border transition-all ${selectedVoice === 'Fenrir' ? 'bg-blue-600 border-blue-500' : 'border-gray-700 text-gray-400'}`}>Erkek Sesi</button>
                         </div>
                         <button 
                             onClick={handleConnect}
@@ -559,60 +509,28 @@ export const LiveInterface: React.FC = () => {
                                 currentMode === 'psychologist' ? 'bg-teal-600 hover:bg-teal-500' : 
                                 currentMode === 'romance' ? 'bg-pink-600 hover:bg-pink-500' :
                                 'bg-white text-black hover:bg-gray-200'}`}
-                            aria-label="Bağlantıyı Başlat"
+                            aria-label="Görüşmeyi Başlat"
                         >
-                            <span className="material-symbols-outlined" aria-hidden="true">
-                                {currentMode === 'romance' ? 'favorite' : 'mic'}
-                            </span>
-                            {currentMode === 'psychologist' ? 'Terapiyi Başlat' : 
-                             currentMode === 'english_tutor' ? 'Dersi Başlat' : 
-                             currentMode === 'romance' ? 'Aşkım, Konuşalım' :
-                             'Bağlan'}
+                            <span className="material-symbols-outlined" aria-hidden="true">mic</span>
+                            {currentMode === 'psychologist' ? 'Terapiye Bağlan' : 
+                             currentMode === 'romance' ? 'Bağlan Aşkım' : 'Bağlan'}
                         </button>
                     </div>
                 ) : (
                     <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                        {/* Mute Button */}
-                        <button 
-                            onClick={() => {
-                                setIsMuted(!isMuted);
-                                if (!isMuted) handleInterrupt(); 
-                            }}
-                            className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${isMuted ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-gray-800 text-white border border-gray-700'}`}
-                            aria-label={isMuted ? "Sesi Aç" : "Sessize Al"}
-                            aria-pressed={isMuted}
-                        >
+                        <button onClick={() => { setIsMuted(!isMuted); if (!isMuted) handleInterrupt(); }} className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${isMuted ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-gray-800 text-white border border-gray-700'}`} aria-label={isMuted ? "Mikrofonu Aç" : "Mikrofonu Sessize Al"}>
                             <span className="material-symbols-outlined text-2xl" aria-hidden="true">{isMuted ? 'mic_off' : 'mic'}</span>
-                            <span className="text-[10px] font-bold">{isMuted ? 'Sessiz' : 'Açık'}</span>
+                            <span className="text-[10px] font-bold">Sessiz</span>
                         </button>
-
-                        {/* Camera Button */}
-                        <button 
-                            onClick={() => setIsCameraOn(!isCameraOn)}
-                            className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${isCameraOn ? 'bg-green-500 text-white shadow-lg shadow-green-500/20' : 'bg-gray-800 text-white border border-gray-700'}`}
-                            aria-label={isCameraOn ? "Kamerayı Kapat" : "Kamerayı Aç"}
-                            aria-pressed={isCameraOn}
-                        >
+                        <button onClick={handleCameraToggle} className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${isCameraOn ? 'bg-green-500 text-white shadow-lg' : 'bg-gray-800 text-white border border-gray-700'}`} aria-label={isCameraOn ? "Kamerayı Kapat" : "Kamerayı Aç"}>
                             <span className="material-symbols-outlined text-2xl" aria-hidden="true">{isCameraOn ? 'videocam' : 'videocam_off'}</span>
                             <span className="text-[10px] font-bold">Kamera</span>
                         </button>
-
-                        {/* Interrupt Button (Sustur) */}
-                        <button 
-                            onClick={handleInterrupt}
-                            className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all bg-gray-800 text-yellow-400 border border-gray-700 active:bg-yellow-500/20 active:scale-95"
-                            aria-label="Sustur"
-                        >
+                        <button onClick={handleInterrupt} className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all bg-gray-800 text-yellow-400 border border-gray-700 active:bg-yellow-500/20 active:scale-95" aria-label="Alper'i Sustur ve Dinlemeye Geç">
                             <span className="material-symbols-outlined text-2xl" aria-hidden="true">stop_circle</span>
                             <span className="text-[10px] font-bold">Sustur</span>
                         </button>
-
-                        {/* End Call */}
-                        <button 
-                            onClick={cleanup}
-                            className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all bg-red-600 text-white hover:bg-red-500 shadow-lg shadow-red-900/30"
-                            aria-label="Görüşmeyi Bitir"
-                        >
+                        <button onClick={cleanup} className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all bg-red-600 text-white hover:bg-red-500 shadow-lg shadow-red-900/30" aria-label="Görüşmeyi Sonlandır">
                             <span className="material-symbols-outlined text-2xl" aria-hidden="true">call_end</span>
                             <span className="text-[10px] font-bold">Bitir</span>
                         </button>
