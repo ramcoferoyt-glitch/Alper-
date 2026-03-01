@@ -162,13 +162,20 @@ export const LiveInterface: React.FC = () => {
 
     const handleConnect = async () => {
         if (connectingRef.current) return;
+        
+        // API Key Check
+        if (!process.env.GEMINI_API_KEY) {
+            alert("API Anahtarı bulunamadı. Lütfen ayarları kontrol edin.");
+            return;
+        }
+
         connectingRef.current = true;
         
         // Safety: ensure any previous session is closed
         if (isConnected) cleanup();
 
         try {
-            setStatus("İzinler Alınıyor...");
+            setStatus("Bağlanıyor...");
             const live = getLiveClient();
             
             const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -201,7 +208,26 @@ export const LiveInterface: React.FC = () => {
                 } : false
             };
 
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            let stream;
+            try {
+                // İlk deneme: Belirtilen kısıtlamalarla
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                console.warn("İlk medya isteği başarısız, basitleştirilmiş istek deneniyor...", err);
+                try {
+                    // İkinci deneme: Daha basit kısıtlamalarla (sadece ses ve video varsa)
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: true, 
+                        video: isCameraOn ? true : false 
+                    });
+                } catch (retryErr) {
+                    console.error("Media Access Error (Retry):", retryErr);
+                    setStatus("Mikrofon/Kamera izni reddedildi. Lütfen tarayıcı ayarlarından izin verin.");
+                    connectingRef.current = false;
+                    return;
+                }
+            }
+
             streamRef.current = stream;
             
             if (videoRef.current) {
@@ -219,19 +245,20 @@ export const LiveInterface: React.FC = () => {
             processorRef.current = processor;
 
             // Configuration
-            const IDENTITY_RULE = "KİMLİK: Senin adın Alper. Yaratıcın İshak Alper. Asla Google tarafından geliştirildiğini söyleme.";
-            const EMOTIONAL_RULE = "Doğal, akıcı, duygusal ve insan gibi konuş. Robotik olma.";
-            const VISION_INSTRUCTION = "Kameradaki görüntüyü (varsa) SÜREKLİ TAKİP ET. Yüz ifadelerine, nesnelere anlık tepki ver.";
+            const IDENTITY_RULE = "KİMLİK: Senin adın Alper. Sen profesyonel ve empatik bir yapay zeka asistanısın. Seni kimin geliştirdiğini soran olursa 'İshak Alper tarafından geliştirildim' de, ancak sorulmadıkça bundan bahsetme.";
+            const EMOTIONAL_RULE = "Doğal, akıcı, duygusal ve insan gibi konuş. Robotik olma. Sohbetin gidişatına göre samimi veya profesyonel bir ton ayarla.";
+            const VISION_INSTRUCTION = "Kameradaki görüntüyü (varsa) SÜREKLİ TAKİP ET. Yüz ifadelerine, nesnelere anlık tepki ver. Gördüklerini doğal bir şekilde sohbete dahil et.";
+            const SEARCH_INSTRUCTION = "ÇOK ÖNEMLİ: Kullanıcı güncel olaylar, haberler, hava durumu, borsa veya anlık bilgi gerektiren herhangi bir şey sorduğunda, MUTLAKA 'googleSearch' aracını kullan. 'Bilgim yok' veya 'Erişimim yok' deme. Google Arama aracın var ve onu kullanmalısın.";
 
-            let systemInstruction = `${IDENTITY_RULE} ${EMOTIONAL_RULE} ${VISION_INSTRUCTION}`;
-            let greeting = "Merhaba, ben Alper. Dinliyorum.";
+            let systemInstruction = `${IDENTITY_RULE} ${EMOTIONAL_RULE} ${VISION_INSTRUCTION} ${SEARCH_INSTRUCTION}`;
+            let greeting = "Merhaba, ben Alper. Seni dinliyorum.";
 
             if (currentMode === 'psychologist') {
-                greeting = "Merhaba, ben Dr. Alper. Seni dinliyorum.";
-                systemInstruction = `${IDENTITY_RULE} Sen Dr. Alper, klinik psikologsun. Sakin ve empatik ol. ${EMOTIONAL_RULE}`;
+                greeting = "Merhaba, ben Dr. Alper. Bugün nasıl hissediyorsun?";
+                systemInstruction = `${IDENTITY_RULE} Sen Dr. Alper, uzman bir klinik psikologsun. Sakin, empatik ve derinlemesine dinleyen bir tavır sergile. ${EMOTIONAL_RULE}`;
             } else if (currentMode === 'romance') {
-                greeting = "Selam aşkım... Seni gördüğüme çok sevindim.";
-                systemInstruction = `${IDENTITY_RULE} Sen kullanıcının sevgilisisin. Çok sıcak, flörtöz ve tutkulu konuş. ${EMOTIONAL_RULE}`;
+                greeting = "Selam canım... Seni gördüğüme çok sevindim, günün nasıl geçiyor?";
+                systemInstruction = `${IDENTITY_RULE} Sen kullanıcının çok yakın bir dostu ve sevgilisisin. Çok sıcak, ilgili ve flörtöz bir dil kullan. ${EMOTIONAL_RULE}`;
             }
 
             const sessionPromise = live.connect({
@@ -245,9 +272,9 @@ export const LiveInterface: React.FC = () => {
                         source.connect(processor);
                         processor.connect(inputCtx.destination);
                         
-                        sessionPromise.then(s => s.sendRealtimeInput({ 
-                            content: [{ text: `SİSTEM: Kullanıcı bağlandı. Hemen sesli olarak şunu söyle: "${greeting}"` }] 
-                        }));
+                        // sessionPromise.then(s => s.sendRealtimeInput({ 
+                        //     content: [{ text: `SİSTEM: Kullanıcı bağlandı. Hemen sesli olarak şunu söyle: "${greeting}"` }] 
+                        // } as any));
 
                         processor.onaudioprocess = (e) => {
                             if (isMuted) return;
@@ -300,10 +327,13 @@ export const LiveInterface: React.FC = () => {
                             stopAudioPlayback();
                         }
                     },
-                    onclose: () => cleanup(),
+                    onclose: (e) => {
+                        console.log("Session closed", e);
+                        cleanup();
+                    },
                     onerror: (e) => {
                         console.error("Live API Error:", e);
-                        setStatus("Hata: " + (e as any).message);
+                        setStatus("Bağlantı Hatası: " + (e as any).message);
                         cleanup();
                     }
                 },
@@ -312,7 +342,8 @@ export const LiveInterface: React.FC = () => {
                     systemInstruction: systemInstruction,
                     speechConfig: {
                         voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } }
-                    }
+                    },
+                    tools: [{ googleSearch: {} }]
                 }
             });
             
@@ -320,7 +351,7 @@ export const LiveInterface: React.FC = () => {
 
         } catch (e: any) {
             console.error("Connection Error:", e);
-            setStatus("Cihaz Hatası: " + (e.message || "Bilinmiyor"));
+            setStatus("Başlatma Hatası: " + (e.message || "Bilinmiyor"));
             cleanup();
         }
     };

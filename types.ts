@@ -6,7 +6,14 @@
 
 export type AppMode = 'chat' | 'image' | 'video' | 'live' | 'maps' | 'notebook' | 'thumbnail' | 'editor' | 'psychologist' | 'consultant' | 'finance' | 'personal_coach' | 'lawyer' | 'agent' | 'memory' | 'downloader' | 'social_content' | 'learning' | 'daily_life';
 export type PsychologistSubMode = 'therapy' | 'academic';
-export type AIModel = 'x3' | 'x5'; // x3 = fast, x5 = thinking/pro
+export type AIModel = 'x3' | 'x5'; 
+export type AppLanguage = 'tr' | 'en' | 'de' | 'fr' | 'es' | 'ru' | 'ar' | 'it' | 'zh' | 'ja' | 'pt' | 'ko' | 'hi' | 'nl' | 'sv';
+
+declare global {
+    interface Window {
+        aistudio: any;
+    }
+}
 
 export interface UserProfile {
     name: string;
@@ -15,6 +22,7 @@ export interface UserProfile {
     role: string;
     bio: string;
     avatar?: string;
+    customInstructions?: string; // New field for AI behavior customization
     preferences: {
         allowBackgroundProcessing: boolean;
         dailyBriefing: boolean;
@@ -25,13 +33,12 @@ export interface UserProfile {
         };
         theme: 'dark' | 'light';
     };
-    // Local learned facts cache
     learnedFacts?: string[]; 
 }
 
 export interface KnowledgeItem {
     id: string;
-    topic: string; // e.g., "User Preference", "Correction", "Personal Detail"
+    topic: string;
     fact: string;
     confidence: number;
     timestamp: number;
@@ -48,7 +55,7 @@ export interface SavedSession {
 }
 
 export interface Attachment {
-    data: string; // base64
+    data: string;
     mimeType: string;
 }
 
@@ -106,8 +113,6 @@ export const SOCIAL_FORMATS: { [key: string]: SocialFormat } = {
     TIKTOK: { label: 'Dikey (Shorts/Reels)', platform: 'TikTok/Instagram', value: '9:16', icon: 'phonelink_ring', description: 'Shorts (1080x1920)' },
     INSTAGRAM: { label: 'Kare (Gönderi)', platform: 'Instagram', value: '1:1', icon: 'photo_camera', description: 'Gönderi (1080x1080)' },
 };
-
-// --- Shader Pilot Types ---
 
 export enum AiStage {
     IDLE = 'IDLE',
@@ -229,7 +234,8 @@ export type ShipModulationTarget =
     'scale' | 'scaleAsymX' | 
     'stretch' | 
     'taper' | 
-    'twist' | 'twistAsymX' | 
+    'twist' | 
+    'twistAsymX' | 
     'asymmetryX' | 'asymmetryY' | 'asymmetryZ';
 
 export interface ShipModulation {

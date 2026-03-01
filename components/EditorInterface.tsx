@@ -3,458 +3,755 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { generateBookManuscript, continueBookManuscript } from '../services/GeminiService';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { processEditorText } from '../services/GeminiService';
+import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-declare const html2pdf: any;
-
-const STYLES = [
-    { id: 'editors_choice', label: 'Editörün Seçimi (Dengeli)' },
-    { id: 'fiction', label: 'Sürükleyici Roman (Kurgu)' },
-    { id: 'academic', label: 'Akademik / Bilimsel' },
-    { id: 'self_help', label: 'Kişisel Gelişim (Samimi)' },
-    { id: 'biography', label: 'Biyografi / Anlatı' },
-    { id: 'thriller', label: 'Gerilim / Gizem' },
-];
+// Set worker path for PDF.js using local Vite asset
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 export const EditorInterface: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'text' | 'files'>('text');
-    const [pastedText, setPastedText] = useState('');
-    const [files, setFiles] = useState<{ name: string; content: string; type: 'file'; mimeType: string }[]>([]);
-    const [instructions, setInstructions] = useState('');
-    const [pageCount, setPageCount] = useState(200);
-    const [selectedStyle, setSelectedStyle] = useState('editors_choice');
-    const [isComplete, setIsComplete] = useState(false);
+    const { selectedModel } = useAppContext();
+    const [text, setText] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processingProgress, setProcessingProgress] = useState<string | null>(null);
+    const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+    const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
     
-    // Auto-Save: Load from localStorage
-    const [manuscript, setManuscript] = useState(() => {
-        return localStorage.getItem('alper_editor_draft') || '';
-    });
-
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [isContinuing, setIsContinuing] = useState(false);
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    // Editor Settings
+    const [selectedAction, setSelectedAction] = useState('Düzeltme ve İyileştirme');
+    const [selectedStyle, setSelectedStyle] = useState('Profesyonel ve Kurumsal');
+    const [targetLength, setTargetLength] = useState('Orijinal Uzunluğu Koru');
+    const [customPrompt, setCustomPrompt] = useState('');
+    
+    // History & Retry
+    const [lastRequest, setLastRequest] = useState<{text: string, instruction: string} | null>(null);
+    const [history, setHistory] = useState<string[]>([]);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const previewRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Auto-Save Effect
+    // Stats
+    const [wordCount, setWordCount] = useState(0);
+    const [charCount, setCharCount] = useState(0);
+    const [pageCount, setPageCount] = useState(0);
+
+    // Debounced stats calculation
     useEffect(() => {
-        localStorage.setItem('alper_editor_draft', manuscript);
-    }, [manuscript]);
+        const timer = setTimeout(() => {
+            const chars = text.length;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            setCharCount(chars);
+            setWordCount(words);
+            setPageCount(Math.ceil(words / 250)); // Avg 250 words per page
+        }, 500); // Increased debounce for huge texts
+        return () => clearTimeout(timer);
+    }, [text]);
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            Array.from(e.target.files).forEach((file: File) => {
-                const reader = new FileReader();
-                
-                // PDF'ler için DataURL (Base64), Metin dosyaları için Text oku
-                if (file.type === 'application/pdf') {
-                    reader.onload = (ev) => {
-                        const base64 = (ev.target?.result as string).split(',')[1];
-                        setFiles(prev => [...prev, { name: file.name, content: base64, type: 'file', mimeType: 'application/pdf' }]);
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    reader.onload = (ev) => {
-                        const text = ev.target?.result as string;
-                        setFiles(prev => [...prev, { name: file.name, content: text, type: 'file', mimeType: 'text/plain' }]);
-                    };
-                    reader.readAsText(file);
+    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setText(e.target.value);
+    };
+
+    // Helper function to process huge texts in chunks to avoid AI output truncation and API quota limits
+    const processInChunks = async (fullText: string, instruction: string) => {
+        const MAX_CHUNK_SIZE = 20000; // Increased to reduce number of requests (approx 5000 tokens, safe for 8192 output limit)
+        if (fullText.length <= MAX_CHUNK_SIZE) {
+            setProcessingProgress("Metin işleniyor (1/1)...");
+            return await processEditorText(fullText, instruction, selectedModel);
+        }
+
+        const paragraphs = fullText.split('\n');
+        const chunks: string[] = [];
+        let currentChunk = '';
+
+        for (const p of paragraphs) {
+            if ((currentChunk.length + p.length) > MAX_CHUNK_SIZE && currentChunk.length > 0) {
+                chunks.push(currentChunk);
+                currentChunk = '';
+            }
+            currentChunk += p + '\n';
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk);
+
+        let result = '';
+        for (let i = 0; i < chunks.length; i++) {
+            const percent = Math.round(((i) / chunks.length) * 100);
+            setProcessingProgress(`Devasa Metin İşleniyor: %${percent} (Bölüm ${i + 1} / ${chunks.length})`);
+            
+            let retries = 5; // Increased retries for quota issues
+            let chunkResult = '';
+            while (retries > 0) {
+                try {
+                    chunkResult = await processEditorText(chunks[i], instruction, selectedModel);
+                    break; // Success
+                } catch (err: any) {
+                    retries--;
+                    const errorMessage = err.message?.toLowerCase() || "";
+                    const isQuotaError = errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('token') || errorMessage.includes('exhausted');
+                    
+                    if (retries === 0) {
+                        if (isQuotaError) {
+                            throw new Error("Yapay zeka API kotası doldu (Çok fazla istek atıldı). Kalan metin işlenemedi. Lütfen 1-2 dakika bekleyip tekrar deneyin.");
+                        }
+                        throw err;
+                    }
+                    
+                    // If quota error, wait much longer (15 seconds) before retrying
+                    if (isQuotaError) {
+                        setProcessingProgress(`API Kotası Bekleniyor... (Bölüm ${i + 1} / ${chunks.length})`);
+                        await new Promise(r => setTimeout(r, 15000));
+                    } else {
+                        await new Promise(r => setTimeout(r, 3000));
+                    }
                 }
-            });
-        }
-        // Input değerini sıfırla ki aynı dosya tekrar seçilebilsin
-        if(e.target) e.target.value = '';
-    };
-
-    const handleGenerate = async () => {
-        const hasContent = pastedText.trim().length > 0 || files.length > 0;
-        if (!hasContent && !instructions) return;
-
-        setIsGenerating(true);
-        setIsComplete(false);
-        try {
-            // Combine sources structure
-            const sources = files.map(f => ({
-                content: f.content,
-                mimeType: f.mimeType,
-                isInlineData: f.mimeType === 'application/pdf' // PDF is inline data, text is text
-            }));
-
-            if (pastedText.trim()) {
-                sources.push({ content: pastedText, mimeType: 'text/plain', isInlineData: false });
             }
-
-            const styleLabel = STYLES.find(s => s.id === selectedStyle)?.label || 'Profesyonel';
             
-            const result = await generateBookManuscript(sources, instructions, pageCount, styleLabel);
-            setManuscript(result);
-        } catch (e) {
-            console.error(e);
-            alert("Kitap oluşturulurken hata oluştu. Lütfen tekrar deneyin.");
-        } finally {
-            setIsGenerating(false);
+            result += chunkResult + '\n\n';
+            // Wait 4 seconds between successful requests to stay under the 15 Requests Per Minute (RPM) free tier limit
+            await new Promise(resolve => setTimeout(resolve, 4000)); 
         }
+        setProcessingProgress(`İşlem Tamamlandı! %100`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return result.trim();
     };
 
-    const handleContinue = async () => {
-        if (!manuscript || isComplete) return;
-        setIsContinuing(true);
+    const handleAnalyze = async () => {
+        if (!text.trim()) {
+            alert("Lütfen analiz edilecek bir metin girin.");
+            return;
+        }
+
+        setIsProcessing(true);
+        setProcessingProgress("Analiz ediliyor...");
+        setAnalysisResult(null);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Yield for UI update
+
         try {
-            const styleLabel = STYLES.find(s => s.id === selectedStyle)?.label || 'Profesyonel';
-            const newContent = await continueBookManuscript(manuscript, instructions, styleLabel);
-            
-            if (newContent.includes('[SON]')) {
-                setIsComplete(true);
-                const cleanContent = newContent.replace('[SON]', '');
-                setManuscript(prev => prev + "\n\n" + cleanContent);
-            } else {
-                setManuscript(prev => prev + "\n\n" + newContent);
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Devam ederken hata oluştu.");
+            const instruction = "Metni kelime kelime, cümle cümle derinlemesine analiz et. Dil hatalarını, anlatım bozukluklarını, zayıf kelimeleri tespit et ve nasıl geliştirilebileceğine dair profesyonel bir eleştiri/rapor sun. Metni değiştirme, sadece rapor ver. KESİNLİKLE markdown sembolleri (*, **, #) kullanma. Sadece düz metin ve paragraflar halinde yaz.";
+            const textToAnalyze = text.length > 30000 ? text.substring(0, 30000) + "\n\n[Metin çok uzun olduğu için analizin ilk kısmı değerlendirildi...]" : text;
+            const result = await processEditorText(textToAnalyze, instruction, selectedModel);
+            setAnalysisResult(result);
+        } catch (error: any) {
+            alert(error.message || "Analiz sırasında bir hata oluştu.");
         } finally {
-            setIsContinuing(false);
+            setIsProcessing(false);
+            setProcessingProgress(null);
         }
     };
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(manuscript).then(() => {
-            alert("Metin kopyalandı!");
-            setIsMenuOpen(false);
-        });
+    const handleFindDuplicates = async () => {
+        if (!text.trim()) {
+            alert("Lütfen analiz edilecek bir metin girin.");
+            return;
+        }
+        
+        setIsProcessing(true);
+        setProcessingProgress("Tekrarlar aranıyor...");
+        setAnalysisResult(null);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Yield for UI update
+
+        try {
+            const instruction = `Sen usta bir editörsün. Bu devasa metni baştan sona titizlikle tara. 
+GÖREVİN: Yanlışlıkla kopyalanıp yapıştırılmış, BİREBİR AYNI olan paragrafları veya büyük metin bloklarını tespit etmek. 
+Sadece benzer kelimeleri veya kısa cümleleri DEĞİL, tamamen aynı olan koca paragrafları bulmalısın.
+
+Lütfen şu formatta eksiksiz bir rapor sun:
+1. Birebir tekrar eden metin blokları hangileri? (İlk birkaç kelimesini yazarak belirt)
+2. Bu tekrarlar hangi sayfalarda veya bölümlerde (nereden nereye kadar) yer alıyor?
+
+KESİNLİKLE markdown sembolleri (*, **, #) kullanma. Sadece düz metin olarak rapor ver.`;
+            
+            const textToAnalyze = text.length > 50000 ? text.substring(0, 50000) + "\n\n[Metin çok uzun olduğu için analizin ilk kısmı değerlendirildi...]" : text;
+            const result = await processEditorText(textToAnalyze, instruction, selectedModel);
+            setAnalysisResult("TEKRAR EDEN METİNLER RAPORU:\n\n" + result);
+        } catch (error: any) {
+            alert(error.message || "Tekrarlar bulunurken bir hata oluştu.");
+        } finally {
+            setIsProcessing(false);
+            setProcessingProgress(null);
+            setIsActionMenuOpen(false);
+        }
+    };
+
+    const handleRemoveDuplicates = async () => {
+        if (!text.trim()) return;
+        
+        setIsProcessing(true);
+        setProcessingProgress("Tekrarlar analiz ediliyor...");
+        setHistory(prev => [...prev, text]);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Yield for UI update
+        
+        try {
+            // Programmatic exact duplicate removal
+            let newText = text;
+            const paragraphs = newText.split('\n');
+            const uniqueParagraphs = [];
+            const seen = new Set();
+            
+            let removedCount = 0;
+            
+            for (const p of paragraphs) {
+                const trimmed = p.trim();
+                if (trimmed.length < 30) {
+                    uniqueParagraphs.push(p); // Keep short lines like dialogue or formatting
+                    continue;
+                }
+                if (!seen.has(trimmed)) {
+                    seen.add(trimmed);
+                    uniqueParagraphs.push(p);
+                } else {
+                    removedCount++;
+                }
+            }
+            
+            newText = uniqueParagraphs.join('\n');
+            
+            if (removedCount === 0) {
+                // If no exact duplicates found programmatically, and text is huge, warn user
+                if (text.length > 30000) {
+                    const proceed = confirm("Birebir kopya bulunamadı. Yapay zeka ile benzerlik temizliği yapmak devasa metinleri (100+ sayfa) kısaltabilir. Yine de devam etmek istiyor musunuz?");
+                    if (!proceed) {
+                        setIsProcessing(false);
+                        setProcessingProgress(null);
+                        setIsActionMenuOpen(false);
+                        return;
+                    }
+                }
+                
+                const instruction = `GÖREVİN: Bu metindeki SADECE yanlışlıkla kopyalanmış, birebir tekrar eden kısımları silmek.
+ÇOK ÖNEMLİ KURALLAR:
+1. Tekrar etmeyen normal metinlere KESİNLİKLE DOKUNMA, ÖZETLEME VE KISALTMA.
+2. Sadece arka arkaya veya farklı yerlerde birebir kopyalanmış paragrafları tespit et ve fazlalıkları sil (sadece bir kopyasını bırak).
+3. Metnin orijinal uzunluğunu ve bütünlüğünü koru. Hiçbir bölümü atlama.
+4. KESİNLİKLE markdown sembolleri (*, **, #) kullanma.`;
+                
+                newText = await processInChunks(text, instruction);
+            }
+            
+            setText(newText);
+            alert(removedCount > 0 ? `${removedCount} adet tekrar eden paragraf başarıyla temizlendi.` : "Tekrar eden metinler başarıyla temizlendi.");
+        } catch (error: any) {
+            alert(error.message || "Tekrarlar temizlenirken bir hata oluştu.");
+        } finally {
+            setIsProcessing(false);
+            setProcessingProgress(null);
+            setIsActionMenuOpen(false);
+        }
+    };
+
+    const handleAutoBookFormat = async () => {
+        if (!text.trim()) {
+            alert("Lütfen önce metin girin veya bir dosya yükleyin.");
+            return;
+        }
+
+        const instruction = `Sen profesyonel bir yayınevi baş editörüsün.
+GÖREVİN: Bu metni basılacak mükemmel bir kitap formatına getirmek.
+ÇOK ÖNEMLİ KURALLAR:
+1. METNİ KESİNLİKLE ÖZETLEME VE KISALTMA! Orijinal hikayedeki hiçbir olayı, karakteri veya detayı SİLME. SANA VERİLEN METNİN UZUNLUĞU İLE ÇIKTI UZUNLUĞU AYNI OLMALIDIR.
+2. Sadece gerekli gördüğün yerlere konuya uygun tematik BÖLÜM BAŞLIKLARI ekle (BÜYÜK HARFLE yaz).
+3. Hikayeyi canlandır, edebi dili güçlendir.
+4. Dil, yazım ve noktalama hatalarını kusursuzca düzelt.
+5. KESİNLİKLE markdown sembolleri (*, **, #) kullanma. Sadece düz metin ver.`;
+
+        setIsProcessing(true);
+        setProcessingProgress("Kitap formatına dönüştürülüyor...");
+        setHistory(prev => [...prev, text]);
+        setLastRequest({ text, instruction });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        try {
+            const result = await processInChunks(text, instruction);
+            setText(result);
+            alert("Otomatik Yayınevi Editörü işlemi tamamlandı! Kitabınız profesyonelce düzenlendi.");
+        } catch (error: any) {
+            alert(error.message || "İşlem sırasında bir hata oluştu.");
+        } finally {
+            setIsProcessing(false);
+            setProcessingProgress(null);
+        }
+    };
+
+    const handleStartWriting = async (isRetry = false) => {
+        if (!text.trim() && !isRetry) {
+            alert("Lütfen önce metin girin veya bir dosya yükleyin.");
+            return;
+        }
+        
+        const targetText = isRetry && lastRequest ? lastRequest.text : text;
+        const instruction = isRetry && lastRequest ? lastRequest.instruction : `
+İşlem Türü: ${selectedAction}
+Yazım Stili / Tonu: ${selectedStyle}
+Hedef Uzunluk: ${targetLength}
+Özel Talimat: ${customPrompt || 'Yok'}
+
+GÖREVİN: Sana verilen metni yukarıdaki ayarlara göre düzenlemek.
+ÇOK ÖNEMLİ KURALLAR:
+1. METNİ KESİNLİKLE ÖZETLEME VE KISALTMA! SANA VERİLEN METNİN UZUNLUĞU İLE ÇIKTI UZUNLUĞU AYNI OLMALIDIR.
+2. Orijinal metindeki HİÇBİR paragrafı, cümleyi veya detayı SİLME.
+3. Sadece dilbilgisi hatalarını düzelt, anlatımı güçlendir ve istenen stile uyarla.
+4. Metnin uzunluğu orijinaliyle neredeyse aynı kalmalıdır. Hiçbir bölümü atlama.
+5. KESİNLİKLE markdown sembolleri (*, **, #) KULLANMA. Başlıkları BÜYÜK HARFLE yaz.
+        `.trim();
+
+        setIsProcessing(true);
+        setProcessingProgress("Metin işleniyor...");
+        await new Promise(resolve => setTimeout(resolve, 50)); // Yield for UI update
+        
+        if (!isRetry) {
+            setHistory(prev => [...prev, text]);
+            setLastRequest({ text, instruction });
+        }
+
+        try {
+            const result = await processInChunks(targetText, instruction);
+            setText(result);
+        } catch (error: any) {
+            alert(error.message || "İşlem sırasında bir hata oluştu.");
+        } finally {
+            setIsProcessing(false);
+            setProcessingProgress(null);
+            setIsActionMenuOpen(false);
+        }
+    };
+
+    const handleUndo = () => {
+        if (history.length > 0) {
+            const prev = history[history.length - 1];
+            setText(prev);
+            setHistory(h => h.slice(0, -1));
+        }
+        setIsActionMenuOpen(false);
     };
 
     const handleClear = () => {
-        if (confirm("Taslak tamamen silinecek. Emin misiniz?")) {
-            setManuscript('');
-            localStorage.removeItem('alper_editor_draft');
-            setIsComplete(false);
-            setIsMenuOpen(false);
+        if (confirm("Tüm metni temizlemek istediğinize emin misiniz?")) {
+            setText('');
+            setHistory([]);
+            setLastRequest(null);
+            setCustomPrompt('');
+            setAnalysisResult(null);
+        }
+        setIsActionMenuOpen(false);
+    };
+
+    const handleCopy = async () => {
+        if (!text.trim()) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            alert("Metin panoya kopyalandı!");
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            alert("Kopyalama başarısız oldu.");
+        }
+        setIsActionMenuOpen(false);
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsProcessing(true);
+        setProcessingProgress("Dosya okunuyor...");
+        try {
+            if (file.type === 'application/pdf') {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                
+                // Optimize for huge PDFs (e.g., 1500 pages)
+                const numPages = pdf.numPages;
+                let fullText = '';
+                
+                // Process in chunks to avoid freezing the UI
+                const chunkSize = 50;
+                for (let i = 1; i <= numPages; i += chunkSize) {
+                    setProcessingProgress(`PDF Okunuyor: Sayfa ${i} / ${numPages}`);
+                    const end = Math.min(i + chunkSize - 1, numPages);
+                    const promises = [];
+                    for (let j = i; j <= end; j++) {
+                        promises.push(pdf.getPage(j).then(page => page.getTextContent()));
+                    }
+                    const textContents = await Promise.all(promises);
+                    
+                    for (const textContent of textContents) {
+                        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+                        fullText += pageText + '\n\n';
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 10)); // Yield to keep UI responsive
+                }
+                setText(fullText);
+            } else {
+                const fileText = await file.text();
+                setText(fileText);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Dosya okunurken bir hata oluştu. Lütfen geçerli bir PDF veya TXT dosyası yükleyin.");
+        } finally {
+            setIsProcessing(false);
+            setProcessingProgress(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const handleDownloadWord = () => {
-        const htmlContent = `
-            <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-            <head><meta charset='utf-8'><title>Kitap Taslağı</title></head>
-            <body>
-                ${manuscript.replace(/\n/g, '<br>')}
-            </body></html>`;
-        
-        const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Alper-Kitap-${Date.now()}.doc`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setIsMenuOpen(false);
+    const exportToPDF = () => {
+        if (!text.trim()) return;
+        try {
+            // Create a hidden iframe for printing
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            document.body.appendChild(iframe);
+
+            const doc = iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(`
+                    <html>
+                    <head>
+                        <title>Alper Yazar Pro - Belge</title>
+                        <style>
+                            body {
+                                font-family: 'Times New Roman', Times, serif;
+                                font-size: 12pt;
+                                line-height: 1.6;
+                                color: black;
+                                margin: 2cm;
+                                white-space: pre-wrap;
+                            }
+                            @page {
+                                margin: 2cm;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        ${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                    </body>
+                    </html>
+                `);
+                doc.close();
+
+                // Wait for iframe to load before printing
+                iframe.onload = () => {
+                    iframe.contentWindow?.focus();
+                    iframe.contentWindow?.print();
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                    }, 1000);
+                };
+            }
+        } catch (e) {
+            console.error(e);
+            alert("PDF oluşturulurken hata meydana geldi.");
+        }
+        setIsActionMenuOpen(false);
     };
 
-    const handleDownloadPDF = () => {
-        if (!manuscript || typeof html2pdf === 'undefined') return;
-
-        const element = document.createElement('div');
-        element.style.padding = '40px';
-        element.style.fontFamily = 'Georgia, serif';
-        element.style.lineHeight = '1.8';
-        element.style.fontSize = '12pt';
-        element.style.color = '#000';
-        element.style.background = '#fff';
-        element.style.width = '210mm'; 
-
-        const formattedHTML = manuscript
-            .replace(/^# (.*$)/gim, '<h1 style="text-align: center; page-break-before: always; margin-top: 50px; margin-bottom: 30px; font-size: 24pt;">$1</h1>')
-            .replace(/^## (.*$)/gim, '<h2 style="margin-top: 30px; margin-bottom: 20px; font-size: 18pt;">$1</h2>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\n/g, '<p style="margin-bottom: 10px; text-align: justify;">');
-
-        element.innerHTML = `
-            <div style="text-align: center; margin-top: 150px; margin-bottom: 150px;">
-                <h1 style="font-size: 32pt; margin-bottom: 20px;">Taslak Kitap</h1>
-                <p style="font-size: 12pt; color: #666;">Alper Editör ile Oluşturuldu</p>
-                <p style="font-size: 10pt; color: #999;">${new Date().toLocaleDateString('tr-TR')}</p>
-            </div>
-            ${formattedHTML}
-        `;
-        
-        element.style.position = 'fixed';
-        element.style.left = '-9999px';
-        element.style.top = '0';
-        document.body.appendChild(element);
-
-        html2pdf().set({
-            margin: 15,
-            filename: 'kitap-taslak.pdf',
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        }).from(element).save().then(() => {
-            document.body.removeChild(element);
-            setIsMenuOpen(false);
-        }).catch((err:any) => {
+    const exportToTXT = () => {
+        if (!text.trim()) return;
+        try {
+            const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "alper_editor_belgesi.txt";
+            link.style.display = "none";
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 2000); // Increased timeout to ensure download starts
+            setIsActionMenuOpen(false);
+        } catch (err) {
             console.error(err);
-            document.body.removeChild(element);
-        });
+            alert("TXT dosyası oluşturulurken bir hata meydana geldi.");
+        }
     };
 
-    const characterCount = pastedText.length;
-    const wordCount = pastedText.trim().split(/\s+/).filter(w => w.length > 0).length;
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (!target.closest('.action-dropdown-container')) {
+                setIsActionMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
-        <div className="flex h-full bg-gray-950 text-white font-sans overflow-hidden">
-            {/* Sidebar Controls */}
-            <div className="w-full lg:w-[450px] bg-gray-900 border-r border-gray-800 flex flex-col z-10 flex-shrink-0">
-                <div className="p-6 border-b border-gray-800">
-                    <h2 className="text-2xl font-bold text-yellow-500 mb-1 flex items-center gap-2">
-                        <span className="material-symbols-outlined" aria-hidden="true">edit_document</span>
-                        Alper Editör
-                    </h2>
-                    <p className="text-xs text-gray-400 font-medium">Alper X5 Destekli Profesyonel Kitap Mimarı.</p>
-                </div>
-
-                <div className="flex-grow overflow-y-auto custom-scrollbar p-6 space-y-6">
+        <div className="flex flex-col h-full bg-[#050505] relative font-sans text-white">
+            {/* Top Control Panel (Always Visible) */}
+            <div className="flex-none border-b border-white/10 bg-[#0a0a0a] p-4 z-20 flex flex-col gap-4">
+                {/* Header Row: Title & File Upload */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center border border-amber-500/30">
+                            <span className="material-symbols-outlined text-amber-400">edit_document</span>
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold tracking-wide text-white">ALPER YAZAR PRO</h2>
+                            <p className="text-[10px] text-gray-400 font-medium tracking-wider uppercase">Profesyonel Metin Editörü</p>
+                        </div>
+                    </div>
                     
-                    {/* Input Method Tabs */}
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">İçerik Kaynağı</label>
-                        <div className="flex bg-gray-800 p-1 rounded-xl" role="tablist">
-                            <button 
-                                onClick={() => setActiveTab('text')}
-                                role="tab"
-                                aria-selected={activeTab === 'text'}
-                                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'text' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                Metin Yapıştır
-                            </button>
-                            <button 
-                                onClick={() => setActiveTab('files')}
-                                role="tab"
-                                aria-selected={activeTab === 'files'}
-                                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'files' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                Dosya Yükle
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* TEXT INPUT AREA */}
-                    {activeTab === 'text' && (
-                        <div className="animate-fadeIn">
-                            <div className="relative">
-                                <textarea
-                                    value={pastedText}
-                                    onChange={(e) => setPastedText(e.target.value)}
-                                    placeholder="Kitabınızın ham metnini, notlarınızı veya bölüm taslaklarını buraya yapıştırın. Sınırsız uzunlukta olabilir..."
-                                    className="w-full h-64 bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm text-white focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none resize-none placeholder-gray-500 custom-scrollbar"
-                                    aria-label="Kitap Metni Girişi"
-                                ></textarea>
-                                <div className="absolute bottom-4 right-4 text-xs text-gray-500 bg-gray-900/80 px-2 py-1 rounded-md border border-gray-700">
-                                    {wordCount} kelime / {characterCount} karakter
-                                </div>
-                            </div>
-                            <p className="text-[10px] text-gray-500 mt-2 ml-1">* 100.000+ karaktere kadar metin işleyebilir.</p>
-                        </div>
-                    )}
-
-                    {/* FILE INPUT AREA */}
-                    {activeTab === 'files' && (
-                        <div className="animate-fadeIn">
-                            <div 
-                                onClick={() => fileInputRef.current?.click()}
-                                role="button"
-                                tabIndex={0}
-                                aria-label="Dosya Seç"
-                                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-                                className="border-2 border-dashed border-gray-700 hover:border-yellow-500/50 hover:bg-yellow-500/10 rounded-xl p-8 text-center cursor-pointer transition-all group"
-                            >
-                                <span className="material-symbols-outlined text-4xl text-gray-600 group-hover:text-yellow-500 transition-colors mb-3" aria-hidden="true">upload_file</span>
-                                <p className="text-sm text-gray-300 font-medium">Dosyaları Seçin</p>
-                                <p className="text-xs text-gray-500 mt-1">PDF, TXT, MD desteklenir</p>
-                                <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.md" className="hidden" onChange={handleFileSelect} aria-hidden="true" />
-                            </div>
-                            {files.length > 0 && (
-                                <div className="mt-4 space-y-2">
-                                    {files.map((f, i) => (
-                                        <div key={i} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg text-xs border border-gray-700">
-                                            <div className="flex items-center gap-2 overflow-hidden">
-                                                <span className="material-symbols-outlined text-gray-500 text-sm" aria-hidden="true">
-                                                    {f.mimeType === 'application/pdf' ? 'picture_as_pdf' : 'description'}
-                                                </span>
-                                                <span className="truncate max-w-[200px] text-gray-300">{f.name}</span>
-                                            </div>
-                                            <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} className="text-gray-500 hover:text-red-400 p-1" aria-label="Dosyayı kaldır">
-                                                <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Style Selector */}
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Yazım Stili & Ton</label>
-                        <select 
-                            value={selectedStyle}
-                            onChange={(e) => setSelectedStyle(e.target.value)}
-                            className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-xl p-3 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
-                            aria-label="Stil Seçimi"
+                    <div className="flex items-center gap-3">
+                        <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            onChange={handleFileUpload} 
+                            accept=".txt,.pdf,.md,.csv" 
+                            className="hidden" 
+                            aria-label="Dosya Seçme Alanı"
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()} 
+                            className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 text-gray-300"
+                            aria-label="Dosya Yükle"
+                            title="PDF veya TXT dosyası yükle"
                         >
-                            {STYLES.map(s => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Instructions */}
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Vizyon & Talimatlar</label>
-                        <textarea
-                            value={instructions}
-                            onChange={(e) => setInstructions(e.target.value)}
-                            placeholder="Örn: 'Bölümler arası geçişlerde gerilimi yüksek tut. Kahramanın iç dünyasına odaklan. Stoacı felsefeyi ince bir şekilde işle.'"
-                            className="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none resize-none"
-                            aria-label="Talimatlar"
-                        ></textarea>
-                    </div>
-
-                    {/* Page Count */}
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Hedef Uzunluk (Sayfa)</label>
-                        <div className="flex items-center gap-4 bg-gray-800 p-3 rounded-xl border border-gray-700">
-                            <span className="material-symbols-outlined text-gray-400" aria-hidden="true">auto_stories</span>
-                            <input 
-                                type="number" 
-                                value={pageCount} 
-                                onChange={(e) => setPageCount(parseInt(e.target.value))}
-                                className="bg-transparent w-full outline-none font-bold text-white placeholder-gray-600"
-                                min={10} max={1000}
-                                aria-label="Sayfa Sayısı"
-                            />
-                        </div>
+                            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                            Dosya Seç
+                        </button>
                     </div>
                 </div>
 
-                {/* Sticky Footer Button */}
-                <div className="p-6 border-t border-gray-800 bg-gray-900/95 backdrop-blur">
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isGenerating || isContinuing || (files.length === 0 && !pastedText.trim() && !instructions)}
-                        className="w-full py-4 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95"
-                        aria-label={isGenerating ? "Kitap Yazılıyor..." : "Kitabı Yazmaya Başla"}
+                {/* Controls Row: Dropdowns, Prompts, Action Buttons */}
+                <div className="flex flex-wrap items-center gap-3 bg-[#111] p-2 rounded-xl border border-white/5">
+                    <select 
+                        value={selectedAction} 
+                        onChange={(e) => setSelectedAction(e.target.value)}
+                        className="bg-black border border-white/10 rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-amber-500/50 cursor-pointer"
+                        aria-label="İşlem Türü Seçin"
                     >
-                        {isGenerating ? <span className="material-symbols-outlined animate-spin" aria-hidden="true">progress_activity</span> : <span className="material-symbols-outlined" aria-hidden="true">history_edu</span>}
-                        {isGenerating ? 'Yazılıyor...' : 'Kitabı Yazmaya Başla'}
+                        <option value="Düzeltme ve İyileştirme">Düzeltme ve İyileştirme</option>
+                        <option value="Yeniden Kurgula (Baştan Yaz)">Yeniden Kurgula (Baştan Yaz)</option>
+                        <option value="Edebi Zenginleştirme">Edebi Zenginleştirme</option>
+                        <option value="Bölümlere Ayır">Bölümlere Ayır</option>
+                        <option value="Karakter ve Olay Analizi">Karakter ve Olay Analizi</option>
+                        <option value="Özet Çıkarma">Özet Çıkarma</option>
+                        <option value="Özel Talimat Uygula">Sadece Özel Talimatı Uygula</option>
+                    </select>
+
+                    <select 
+                        value={selectedStyle} 
+                        onChange={(e) => setSelectedStyle(e.target.value)}
+                        className="bg-black border border-white/10 rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-amber-500/50 cursor-pointer"
+                        aria-label="Yazım Stili Seçin"
+                    >
+                        <option value="Profesyonel ve Kurumsal">Profesyonel</option>
+                        <option value="Akademik ve Resmi">Akademik</option>
+                        <option value="Samimi ve İçten">Samimi</option>
+                        <option value="Yaratıcı ve Hikayesel">Yaratıcı / Roman</option>
+                        <option value="Gizemli ve Sürükleyici">Gizemli</option>
+                        <option value="Bilim Kurgu / Fantastik">Bilim Kurgu / Fantastik</option>
+                        <option value="Mevcut Stili Koru">Mevcut Stili Koru</option>
+                    </select>
+
+                    <select 
+                        value={targetLength} 
+                        onChange={(e) => setTargetLength(e.target.value)}
+                        className="bg-black border border-white/10 rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-amber-500/50 cursor-pointer"
+                        aria-label="Hedef Uzunluk Seçin"
+                    >
+                        <option value="Orijinal Uzunluğu Koru">Orijinal Uzunluğu Koru</option>
+                        <option value="Kısa ve Öz (1 Sayfa)">Kısa ve Öz (1 Sayfa)</option>
+                        <option value="Detaylı (3 Sayfa)">Detaylı (3 Sayfa)</option>
+                        <option value="Çok Detaylı (5 Sayfa)">Çok Detaylı (5 Sayfa)</option>
+                        <option value="Genişletilmiş (10+ Sayfa)">Genişletilmiş (10+ Sayfa)</option>
+                    </select>
+
+                    <input 
+                        type="text" 
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="Özel talimatınız (Örn: 3. bölümü daha heyecanlı yaz...)"
+                        className="flex-grow bg-black border border-white/10 rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-amber-500/50 min-w-[200px]"
+                        aria-label="Özel Talimat"
+                    />
+
+                    <button 
+                        onClick={() => handleStartWriting(false)}
+                        disabled={isProcessing}
+                        className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-lg text-sm font-black transition-colors flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-amber-500/20"
+                        aria-label="Yazmaya Başla"
+                    >
+                        <span className="material-symbols-outlined">edit_square</span>
+                        Yazmaya Başla
+                    </button>
+
+                    <div className="w-px h-6 bg-white/10 mx-1"></div>
+
+                    <button 
+                        onClick={handleAutoBookFormat}
+                        disabled={isProcessing}
+                        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-purple-500/30 flex items-center gap-2 border border-purple-400/30"
+                        aria-label="Otomatik Yayınevi Editörü"
+                        title="Metni otomatik olarak kitap formatına sokar, başlıklar ekler, hikayeyi canlandırır ve hataları düzeltir."
+                    >
+                        <span className="material-symbols-outlined text-xl">auto_awesome</span>
+                        YAYINEVİ EDİTÖRÜ (Otomatik Kitap Yap)
+                    </button>
+
+                    <button 
+                        onClick={handleAnalyze}
+                        disabled={isProcessing}
+                        className="px-5 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                        aria-label="Metni Analiz Et"
+                    >
+                        <span className="material-symbols-outlined">analytics</span>
+                        Analiz Et
+                    </button>
+
+                    <button 
+                        onClick={handleFindDuplicates}
+                        disabled={isProcessing}
+                        className="px-5 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                        aria-label="Tekrarları Bul"
+                    >
+                        <span className="material-symbols-outlined">plagiarism</span>
+                        Tekrarları Bul
+                    </button>
+
+                    <button 
+                        onClick={handleRemoveDuplicates}
+                        disabled={isProcessing}
+                        className="px-5 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                        aria-label="Tekrarları Temizle"
+                    >
+                        <span className="material-symbols-outlined">cleaning_services</span>
+                        Tekrarları Temizle
                     </button>
                 </div>
             </div>
 
-            {/* Main Preview Area */}
-            <div className="flex-grow bg-gray-200 text-black overflow-y-auto p-4 lg:p-12 flex justify-center custom-scrollbar relative">
-                <div ref={previewRef} className="max-w-4xl w-full bg-white shadow-2xl min-h-[1000px] p-12 lg:p-24 relative mb-20" aria-live="polite">
-                    {!manuscript && !isGenerating && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 opacity-60">
-                            <span className="material-symbols-outlined text-8xl mb-4 text-gray-300" aria-hidden="true">import_contacts</span>
-                            <p className="text-xl font-serif font-medium text-gray-500">Taslak burada oluşturulacak.</p>
-                            <p className="text-sm text-gray-400 mt-2">Sol panelden içeriğinizi ekleyin ve 'Başla'ya basın.</p>
-                        </div>
-                    )}
+            {/* Main Editor Area */}
+            <div className="flex-grow flex overflow-hidden relative">
+                {/* Text Area */}
+                <div className={`flex-grow transition-all duration-300 ${analysisResult ? 'w-1/2 border-r border-white/10' : 'w-full'} relative`}>
+                    <textarea
+                        ref={textareaRef}
+                        value={text}
+                        onChange={handleTextChange}
+                        placeholder="Kitap taslağınızı, makalenizi veya herhangi bir metni buraya yapıştırın (200.000 kelimeye kadar destekler)...&#10;&#10;✨ Metni yapıştırdığınızda alt kısımda sayfa, kelime ve karakter sayıları anlık olarak görünecektir."
+                        className="w-full h-full bg-transparent text-gray-200 p-8 resize-none outline-none text-lg leading-relaxed custom-scrollbar font-serif"
+                        spellCheck={false}
+                        aria-label="Metin Editörü Alanı"
+                    />
                     
-                    {isGenerating && !manuscript && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20 backdrop-blur-sm">
-                            <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                            <p className="font-serif text-2xl text-gray-700 animate-pulse">Alper kurguluyor...</p>
-                            <p className="text-sm text-gray-500 mt-2">Bu işlem içeriğin uzunluğuna göre biraz sürebilir.</p>
-                        </div>
-                    )}
-
-                    {manuscript && (
-                        <div className="font-serif leading-loose text-lg text-gray-900 prose prose-lg max-w-none">
-                            {/* Improved Rendering */}
-                            {manuscript.split('\n').map((line, i) => {
-                                if (line.startsWith('# ')) return <h1 key={i} className="text-5xl font-bold text-center mt-16 mb-12 pb-6 border-b-2 border-black tracking-tight">{line.replace('# ', '')}</h1>;
-                                if (line.startsWith('## ')) return <h2 key={i} className="text-3xl font-bold mt-12 mb-6 text-gray-800">{line.replace('## ', '')}</h2>;
-                                if (line.startsWith('### ')) return <h3 key={i} className="text-xl font-bold mt-8 mb-4 text-gray-700 uppercase tracking-wide">{line.replace('### ', '')}</h3>;
-                                if (line.trim() === '') return <br key={i} />;
-                                return <p key={i} className="mb-6 text-justify indent-8 leading-relaxed">{line.replace(/\*\*(.*?)\*\*/g, '')}</p>;
-                            })}
-                            
-                            {/* Continue Loading Indicator */}
-                            {isContinuing && (
-                                <div className="mt-8 flex items-center justify-center gap-3 text-gray-500 italic">
-                                    <span className="material-symbols-outlined animate-spin" aria-hidden="true">refresh</span>
-                                    Yeni bölüm yazılıyor...
-                                </div>
-                            )}
-                            
-                            {isComplete && (
-                                <div className="mt-12 p-4 bg-green-100 text-green-800 rounded-xl text-center font-bold">
-                                    Kitap Tamamlandı.
-                                </div>
-                            )}
+                    {/* Processing Overlay */}
+                    {isProcessing && (
+                        <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center z-50" aria-live="polite">
+                            <div className="w-20 h-20 border-4 border-white/10 border-t-amber-500 rounded-full animate-spin mb-6"></div>
+                            <p className="text-amber-400 font-black text-2xl animate-pulse text-center px-4">
+                                {processingProgress || "Yapay Zeka İşlemi Gerçekleştiriyor..."}
+                            </p>
+                            <p className="text-base text-gray-400 mt-4 max-w-lg text-center leading-relaxed">
+                                Lütfen bu ekranı kapatmayın. Devasa metinler (1000+ sayfa) hiçbir kelime kaybı yaşanmaması için yapay zeka tarafından sayfa sayfa, titizlikle işlenmektedir.
+                            </p>
                         </div>
                     )}
                 </div>
 
-                {/* Floating Actions */}
-                {manuscript && (
-                    <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end gap-3">
-                        {/* Action Menu */}
-                        <div className="relative">
-                            {isMenuOpen && (
-                                <div className="absolute bottom-full right-0 mb-3 w-48 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
-                                    <button onClick={handleCopy} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">content_copy</span> Kopyala
-                                    </button>
-                                    <button onClick={handleDownloadWord} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-blue-400 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">description</span> Word İndir
-                                    </button>
-                                    <button onClick={handleDownloadPDF} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-red-400 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">picture_as_pdf</span> PDF İndir
-                                    </button>
-                                    <div className="h-px bg-gray-800 mx-2"></div>
-                                    <button onClick={handleClear} className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-gray-800 hover:text-red-300 flex items-center gap-3 transition-colors">
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">delete</span> Taslağı Temizle
-                                    </button>
-                                </div>
-                            )}
-                            <button 
-                                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                className="bg-gray-900 text-white p-4 rounded-full font-bold shadow-2xl hover:bg-black transition-all border border-gray-700"
-                                title="İşlemler"
-                                aria-label="Seçenekler"
-                            >
-                                <span className="material-symbols-outlined text-xl" aria-hidden="true">{isMenuOpen ? 'close' : 'more_vert'}</span>
+                {/* Analysis Sidebar */}
+                {analysisResult && (
+                    <div className="w-1/2 h-full bg-[#0a0a0a] flex flex-col animate-slideLeft">
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#111]">
+                            <h3 className="font-bold text-amber-400 flex items-center gap-2">
+                                <span className="material-symbols-outlined">troubleshoot</span>
+                                Editör Analiz Raporu
+                            </h3>
+                            <button onClick={() => setAnalysisResult(null)} className="text-gray-500 hover:text-white" aria-label="Analiz Raporunu Kapat">
+                                <span className="material-symbols-outlined">close</span>
                             </button>
                         </div>
-
-                        {/* Continue Button */}
-                        {!isComplete && (
-                            <button 
-                                onClick={handleContinue}
-                                disabled={isContinuing || isGenerating}
-                                className="bg-yellow-600 text-white px-6 py-4 rounded-full font-bold shadow-2xl hover:bg-yellow-500 hover:scale-105 transition-all flex items-center gap-2 border border-yellow-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                aria-label="Yazmaya Devam Et"
-                            >
-                                <span className="material-symbols-outlined" aria-hidden="true">auto_mode</span>
-                                Kaldığın Yerden Devam Et
-                            </button>
-                        )}
-                        {isComplete && (
-                            <div className="bg-green-600 text-white px-6 py-4 rounded-full font-bold shadow-2xl flex items-center gap-2 cursor-default">
-                                <span className="material-symbols-outlined" aria-hidden="true">check_circle</span>
-                                Tamamlandı
-                            </div>
-                        )}
+                        <div className="p-6 overflow-y-auto custom-scrollbar flex-grow text-gray-300 text-sm leading-relaxed whitespace-pre-wrap font-serif">
+                            {/* Render plain text, AI is instructed to not use markdown */}
+                            {analysisResult}
+                        </div>
                     </div>
                 )}
             </div>
+
+            {/* Bottom Status Bar (Visible only when text exists) */}
+            {text.length > 0 && (
+                <div className="flex-none bg-[#0a0a0a] border-t border-white/10 p-3 px-6 flex justify-between items-center animate-fadeIn">
+                    
+                    {/* Left: Stats */}
+                    <div className="flex items-center gap-6 text-sm text-gray-400 font-mono">
+                        <span aria-label={`Sayfa Sayısı: ${pageCount}`}><strong className="text-gray-200 text-base">{pageCount.toLocaleString('tr-TR')}</strong> Sayfa</span>
+                        <span aria-label={`Kelime Sayısı: ${wordCount}`}><strong className="text-gray-200 text-base">{wordCount.toLocaleString('tr-TR')}</strong> Kelime</span>
+                        <span aria-label={`Karakter Sayısı: ${charCount}`}><strong className="text-gray-200 text-base">{charCount.toLocaleString('tr-TR')}</strong> Karakter</span>
+                    </div>
+                    
+                    {/* Right: Actions Dropdown & Undo/Retry */}
+                    <div className="flex items-center gap-2">
+                        {lastRequest && (
+                            <button onClick={() => handleStartWriting(true)} disabled={isProcessing} className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 text-blue-400 disabled:opacity-50" aria-label="Yeniden Yaz">
+                                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                                Yeniden Yaz
+                            </button>
+                        )}
+                        
+                        {history.length > 0 && (
+                            <button onClick={handleUndo} disabled={isProcessing} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 text-gray-300 disabled:opacity-50" aria-label="Geri Al">
+                                <span className="material-symbols-outlined text-[16px]">undo</span>
+                                Geri Al
+                            </button>
+                        )}
+
+                        <button onClick={handleClear} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 text-red-400" aria-label="Tümünü Temizle">
+                            <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            Temizle
+                        </button>
+
+                        <div className="w-px h-6 bg-white/10 mx-2"></div>
+
+                        <div className="relative action-dropdown-container">
+                            <button 
+                                onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 text-gray-300"
+                                aria-expanded={isActionMenuOpen}
+                                aria-haspopup="true"
+                                aria-label="İndirme ve Kopyalama Seçenekleri"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">more_horiz</span>
+                                Diğer Seçenekler
+                            </button>
+
+                            {isActionMenuOpen && (
+                                <div className="absolute bottom-full right-0 mb-2 w-48 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 animate-fadeIn">
+                                    <div className="p-1 flex flex-col">
+                                        <button onClick={handleCopy} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors flex items-center gap-3" aria-label="Metni Kopyala">
+                                            <span className="material-symbols-outlined text-[18px]">content_copy</span> Kopyala
+                                        </button>
+
+                                        <div className="h-px bg-white/10 my-1"></div>
+
+                                        <button onClick={exportToTXT} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors flex items-center gap-3" aria-label="TXT Olarak İndir">
+                                            <span className="material-symbols-outlined text-[18px]">description</span> TXT İndir
+                                        </button>
+                                        <button onClick={exportToPDF} className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center gap-3" aria-label="PDF Olarak İndir">
+                                            <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span> PDF İndir
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

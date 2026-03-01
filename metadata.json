@@ -1,9 +1,5 @@
 {
-  "name": "Alper AI",
-  "description": "Your all-in-one AI creative assistant for text, image, video, and voice.",
-  "requestFramePermissions": [
-    "microphone",
-    "camera",
-    "geolocation"
-  ]
+  "name": "Alper AI Pro",
+  "description": "En gelişmiş çok modelli yapay zeka asistanı. Metin, görsel, video ve canlı sesli görüşme ile profesyonel çözümler.",
+  "requestFramePermissions": ["camera", "microphone"]
 }

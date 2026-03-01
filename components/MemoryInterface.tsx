@@ -116,7 +116,28 @@ export const MemoryInterface: React.FC = () => {
                                                 session.mode === 'consultant' ? 'bg-amber-900/40 text-amber-200 border border-amber-800/50' :
                                                 'bg-blue-900/40 text-blue-200 border border-blue-800/50'
                                             }`}>
-                                                {session.mode === 'chat' ? 'Genel Sohbet' : session.mode.toUpperCase()}
+                                                {(() => {
+                                                    const modeMap: Record<string, string> = {
+                                                        'chat': 'Genel Sohbet',
+                                                        'lawyer': 'Avukat',
+                                                        'psychologist': 'Psikolog',
+                                                        'finance': 'Finans',
+                                                        'consultant': 'Danışman',
+                                                        'agent': 'Ajan',
+                                                        'image': 'Görsel Stüdyo',
+                                                        'video': 'Video Stüdyo',
+                                                        'downloader': 'Medya İndirici',
+                                                        'notebook': 'Not Defteri',
+                                                        'editor': 'Metin Editörü',
+                                                        'maps': 'Haritalar',
+                                                        'personal_coach': 'Yaşam Koçu',
+                                                        'social_content': 'Sosyal Medya',
+                                                        'learning': 'Eğitim',
+                                                        'daily_life': 'Günlük Yaşam',
+                                                        'thumbnail': 'YouTube Kapak'
+                                                    };
+                                                    return modeMap[session.mode] || session.mode.toUpperCase();
+                                                })()}
                                             </span>
                                             <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
                                                 <span className="material-symbols-outlined text-[10px]">schedule</span>

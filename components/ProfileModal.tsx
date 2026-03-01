@@ -92,6 +92,7 @@ export const ProfileModal: React.FC = () => {
                         onClick={() => setIsProfileModalOpen(false)}
                         className="text-gray-500 hover:text-white transition-colors p-2 hover:bg-white/10 rounded-full"
                         aria-label="Kapat"
+                        title="Kapat"
                     >
                         <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
